@@ -175,7 +175,7 @@ def show_login_page():
                 #st.button ("Register", on_click=Register_Clicked, args= (userid, password,designation,displayname))
 
 def show_auditee():
-    st.warning("You Have Logged In as Auditee...You have no access to this Menu")
+    st.warning(f"You Have Logged In as {st.session_state['Role']}...You have no access to this Menu")
 
 
 with headerSection:
@@ -201,11 +201,11 @@ with headerSection:
     else:
         if st.session_state['loggedIn']:
             show_logout_page()   
-            if st.session_state['Role'] == "Auditee":
+            if st.session_state['Role'] == "Auditee" or st.session_state['Role'] == "Auditor":
                     show_auditee()
             else:
                     show_main_page()   
         else:
             show_login_page()
-                      
+                       
                 

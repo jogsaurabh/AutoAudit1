@@ -111,7 +111,7 @@ def create_company(comp_name, com_address,com_email,com_mobile,com_person):
     except sqlite3.Error as error:
         message_verify=("Error while creating New Company", error)
         st.info(error)
-        st.info(comp_name)
+        #st.info(comp_name)
     finally:
         if sqliteConnection:
             sqliteConnection.close()
@@ -200,19 +200,38 @@ def create_dataset(df,table_name,comp_name,person_responsible):
         cursor.execute(f"ALTER TABLE '{table_name}' ADD Sampled TEXT NOT NULL DEFAULT 'Yes'")
         sqliteConnection.commit()
         cursor.close()
+        # add default risk to risk master table
+        #get list of columns in df
+        sqliteConnection.close()
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        cols=list(df.columns)
+        risk_df=pd.DataFrame(cols,columns=['Field'])
+        risk_df['audit_id']=int(st.session_state['AuditID'])
+        risk_df['DataSetName']=ds
+        risk_df['created_by']=st.session_state['User']
+        risk_df['created_on']=currentime
+        risk_df['Criteria']=risk_df['Field']+': should be Correct'
+        #st.dataframe(risk_df)
+        risk_df.to_sql("Risk_Master",sqliteConnection,if_exists='append', index=False)
+        #st.write('okkkkkk')
+        sqliteConnection.commit()
+        cursor.close()
     except sqlite3.Error as error:
-        message=("Error while creating Data Set to sqlite", error)
+        st.error=("Error while creating Data Set to sqlite", error)
+        message="Error in Dataset Creation"
     except ValueError:
         message=("DS Name aready exist...You can create new Dataset with Other Name")
-        st.error("DS Name aready exist...You can create new Dataset with Other Name")
+        #st.error("DS Name aready exist...You can create new Dataset with Other Name")
     finally:
+        
         if sqliteConnection:
             sqliteConnection.close()
             #message=("The SQLite connection is closed")
             
     return message
 
-def add_verification_criteria (Criteria,DsName,comp_name):
+def add_verification_criteria (Criteria,DsName,comp_name,risk_weight,risk_category):
     
     try:
         sqliteConnection = sqlite3.connect('autoaudit.db')
@@ -221,21 +240,28 @@ def add_verification_criteria (Criteria,DsName,comp_name):
         #add DS name in table
         currentime=datetime.now()
         sqlite_insert_with_param = """INSERT INTO DSCriteria
-                          (Verification_Criteria,DSName,CompanyName,created_by,created_on,Audit_Name,Audit_id) 
-                          VALUES (?,?,?,?,?,?,?);"""
-        data_tuple = (Criteria,DsName,comp_name,st.session_state['User'],currentime,st.session_state['Audit'],int(st.session_state['AuditID']))
+                          (Verification_Criteria,DSName,Risk_Weight,Risk_Category,CompanyName,created_by,created_on,Audit_Name,Audit_id) 
+                          VALUES (?,?,?,?,?,?,?,?,?);"""
+        data_tuple = (Criteria,DsName,risk_weight,risk_category,comp_name,st.session_state['User'],currentime,st.session_state['Audit'],int(st.session_state['AuditID']))
         #st.info("Done2")
         cursor.execute(sqlite_insert_with_param, data_tuple)
         sqliteConnection.commit()
-        #st.info("Done3")
-        #query=f"SELECT Verification_Criteria from DSCriteria where DsName='{DsName}' AND CompanyName='{comp_name}'"
-        #st.write(query)
-        #sql_query=pd.read_sql_query(query,sqliteConnection)
-        df = "Added Successfully.."
+        
+        #Add in risk master
+        sqlite_insert_with_param = """INSERT INTO Risk_Master
+                          (Criteria,DataSetName,Risk_Weight,created_by,created_on,Audit_id,Risk_Category) 
+                          VALUES (?,?,?,?,?,?,?);"""
+        data_tuple = (Criteria,DsName,risk_weight,st.session_state['User'],currentime,int(st.session_state['AuditID']),risk_category)
+        #st.info("Done2")
+        cursor.execute(sqlite_insert_with_param, data_tuple)
+        sqliteConnection.commit()
+        message_verify = "Added Successfully.."
+        
         cursor.close()
-        message_verify=(df)
+        st.info(message_verify)
     except sqlite3.Error as error:
         message_verify=("Error while creating Data Set Criteria", error)
+        st.write(message_verify)
     finally:
         if sqliteConnection:
             sqliteConnection.close()
@@ -265,7 +291,7 @@ def get_dsname_personresponsible(auditid,pr):
     try:
         sqliteConnection = sqlite3.connect('autoaudit.db')
         cursor = sqliteConnection.cursor()
-        query=f"SELECT DS,person_responsible from DSName where Audit_id='{auditid}' AND person_responsible='{pr}'"
+        query=f"SELECT DS from DSName where Audit_id='{auditid}' AND person_responsible='{pr}'"
         sql_query=pd.read_sql_query(query,sqliteConnection)
         DSName = pd.DataFrame(sql_query)
         cursor.close()
@@ -302,7 +328,7 @@ def get_verification(DSname,Audit_id):
     try:
         sqliteConnection = sqlite3.connect('autoaudit.db')
         cursor = sqliteConnection.cursor()
-        query=f"SELECT Verification_Criteria from DSCriteria where DsName='{DSname}' AND Audit_id='{Audit_id}'"
+        query=f"SELECT Verification_Criteria,Risk_Weight,Risk_Category from DSCriteria where DsName='{DSname}' AND Audit_id='{Audit_id}'"
         sql_query=pd.read_sql_query(query,sqliteConnection)
         df = pd.DataFrame(sql_query)
         cursor.close()
@@ -315,7 +341,7 @@ def get_verification(DSname,Audit_id):
         
     return df
 
-def add_analytical_review (review,DsName,comp_name):
+def add_analytical_review (criteria,condition,cause,effect,DsName,comp_name,risk_weight,risk_category,file_name):
     
     try:
         sqliteConnection = sqlite3.connect('autoaudit.db')
@@ -324,56 +350,46 @@ def add_analytical_review (review,DsName,comp_name):
         #add DS name in table
         #table_name="AR_"+DsName
         sqlite_insert_with_param = f"""INSERT INTO Audit_AR
-                          (Review,DataSetName,CompanyName,Created_on,created_by,Audit_Name,Audit_id) 
-                          VALUES (?,?,?,?,?,?,?);"""
+                          (Criteria,Condition,Cause,Effect,DataSetName,CompanyName,Created_on,Risk_Weight,Risk_Category,created_by,Audit_Name,Audit_id,Review_File) 
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?);"""
         
         currentime=datetime.now()
-        data_tuple = (review,DsName,comp_name,currentime,st.session_state['User'],st.session_state['Audit'],int(st.session_state['AuditID']))
+        data_tuple = (criteria,condition,cause,effect,DsName,comp_name,currentime,risk_weight,risk_category,st.session_state['User'],st.session_state['Audit'],int(st.session_state['AuditID']),file_name)
         #st.info("Done2")
         
         cursor.execute(sqlite_insert_with_param, data_tuple)
         sqliteConnection.commit()
-        st.info("Review inserted")
+        st.info("Review Inserted")
         #get list of reviews
-        query=f"SELECT Review from Audit_AR where DataSetName='{DsName}' AND CompanyName='{comp_name}'"
+        query=f"SELECT Criteria,Condition,Cause,Effect,Risk_Weight,Risk_Category from Audit_AR where DataSetName='{DsName}' and Audit_id='{int(st.session_state['AuditID'])}'"
         #st.write(query)
         sql_query=pd.read_sql_query(query,sqliteConnection)
         df = pd.DataFrame(sql_query)
         cursor.close()
-        reviews=(df)
+        reviews=('Review Inserted')
     except sqlite3.Error as error:
-        reviews=("Error while creating Data Set Criteria", error)
+        df=("Error while creating Data Set Criteria", error)
+        st.error(df)
     finally:
         if sqliteConnection:
             sqliteConnection.close()
             #message=("The SQLite connection is closed")
             
-    return reviews
+    return df
 
-def insert_vouching(data_id,field,audit_value,remarks,DsName,comp_name):
+def insert_vouching(df):
      
     try:
         sqliteConnection = sqlite3.connect('autoaudit.db')
         cursor = sqliteConnection.cursor()
-        #st.info("Done1")
-        #add DS name in table
-        
-        sqlite_insert_with_param = f"""INSERT INTO Audit_Queries
-                          (Data_Id,Field,Audit_Value,Remarks,Audited_on,DataSetName,CompanyName,Audited_By,Audit_Name,Audit_id) 
-                          VALUES (?,?,?,?,?,?,?,?,?,?);"""
-        currentime=datetime.now()
-        data_tuple = (data_id,field,audit_value,remarks,currentime,DsName,comp_name,st.session_state['User'],st.session_state['Audit'],int(st.session_state['AuditID']))
-        #st.info("Done2")
-        
-        cursor.execute(sqlite_insert_with_param, data_tuple)
+        df.to_sql("Audit_Queries",sqliteConnection,if_exists='append', index=False)
+            
         sqliteConnection.commit()
-        #st.info("Vouching saved")
         cursor.close()
-        vouching=("Vouching Data Saved....")
-        #update DS table status
-        #update_status=update_audit_status(data_id,DsName)
+        vouching=("Audit Vouching added Successfully")
     except sqlite3.Error as error:
         vouching=("Error while saving Vouching", error)
+        #st.error(vouching)
     finally:
         if sqliteConnection:
             sqliteConnection.close()
@@ -427,7 +443,7 @@ def get_pending_queries(auidt_id):
     try:
         sqliteConnection = sqlite3.connect('autoaudit.db')
         cursor = sqliteConnection.cursor()
-        query=f"SELECT * from Audit_Queries where Audit_id={auidt_id} AND Status='Pending' AND (Audit_Verification='No' OR Audit_Value IS NOT NULL)"
+        query=f"SELECT * from Audit_Queries where Audit_id={auidt_id} AND Status='Pending' AND (Condition='No' OR Audit_Value IS NOT NULL)"
         sql_query=pd.read_sql_query(query,sqliteConnection)
         df = pd.DataFrame(sql_query)
         cursor.close()
@@ -501,7 +517,7 @@ def get_ar_for_ds(ds_name):
     try:
         sqliteConnection = sqlite3.connect('autoaudit.db')
         cursor = sqliteConnection.cursor()
-        query=f"SELECT Review from Audit_AR where DataSetName='{ds_name}' and Audit_id='{int(st.session_state['AuditID'])}'"
+        query=f"SELECT Criteria,Condition,Cause,Effect,Risk_Weight,Risk_Category from Audit_AR where DataSetName='{ds_name}' and Audit_id='{int(st.session_state['AuditID'])}'"
         sql_query=pd.read_sql_query(query,sqliteConnection)
         df = pd.DataFrame(sql_query)
         cursor.close()
@@ -661,13 +677,13 @@ def add_query_reply(id,reply):
         sqliteConnection = sqlite3.connect('autoaudit.db')
         cursor = sqliteConnection.cursor()
         #update audit status
-        query=f"UPDATE Audit_Queries SET Reply ='{reply}' WHERE Id = {id}"
+        query=f"UPDATE Audit_Queries SET Reply ='{reply}', Reply_by='{st.session_state['User']}' WHERE Id = {id}"
         #query=f"SELECT Review from Audit_AR where DataSetName='{DsName}' AND CompanyName='{comp_name}'"
         #st.write(query)
         cursor.execute(query)
         sqliteConnection.commit()
         cursor.close()
-        updatereply=("Query Reply updated....")
+        updatereply=("Reply to Query is updated....")
     except sqlite3.Error as error:
         updatereply=("Error while Updating Query Status", error)
     finally:
@@ -683,7 +699,7 @@ def update_query_status(id,reply,close):
         sqliteConnection = sqlite3.connect('autoaudit.db')
         cursor = sqliteConnection.cursor()
         #update audit status
-        query=f"UPDATE Audit_Queries SET status_udate_by ='{reply}',Status ='{close}' WHERE Id = {id}"
+        query=f"UPDATE Audit_Queries SET status_update_remarks ='{reply}',status_udate_by ='{st.session_state['User']}',Status ='{close}' WHERE Id = {id}"
         #query=f"SELECT Review from Audit_AR where DataSetName='{DsName}' AND CompanyName='{comp_name}'"
         #st.write(query)
         cursor.execute(query)
@@ -698,3 +714,440 @@ def update_query_status(id,reply,close):
             #message=("The SQLite connection is closed")
             
     return updatereply
+
+
+def update_query_status_ar(id,reply,close):
+    
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        #update audit status
+        query=f"UPDATE Audit_AR SET status_update_remarks ='{reply}',status_update_by ='{st.session_state['User']}',Status ='{close}' WHERE Id = {id}"
+        #query=f"SELECT Review from Audit_AR where DataSetName='{DsName}' AND CompanyName='{comp_name}'"
+        #st.write(query)
+        cursor.execute(query)
+        sqliteConnection.commit()
+        cursor.close()
+        updatereply=("Query Status updated....")
+    except sqlite3.Error as error:
+        updatereply=("Error while Updating Query Status", error)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+            
+    return updatereply
+
+
+def add_query_reply_AR(id,reply):
+    
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        #update audit status
+        query=f"UPDATE Audit_AR SET reply ='{reply}',reply_by ='{st.session_state['User']}' WHERE Id = {id}"
+        #query=f"SELECT Review from Audit_AR where DataSetName='{DsName}' AND CompanyName='{comp_name}'"
+        #st.write(query)
+        cursor.execute(query)
+        sqliteConnection.commit()
+        cursor.close()
+        updatereply=("Query Reply updated....")
+    except sqlite3.Error as error:
+        updatereply=("Error while Updating Query Reply", error)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+            
+    return updatereply
+
+
+def get_risk_weights_ds_vouching(ds_name):
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        query=f"SELECT Criteria,Risk_Weight,Risk_Category from Risk_Master where DataSetName='{ds_name}' and Audit_id={int(st.session_state['AuditID'])}"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        #st.write(query)
+        cursor.close()
+    except sqlite3.Error as error:
+        df=("Error while getting Audit Reviews", error)
+        st.error(df)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+
+
+def get_risk_weights_ds(ds_name):
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        query=f"SELECT Criteria,Risk_Weight,Risk_Category from Risk_Master where DataSetName='{ds_name}' and Audit_id='{int(st.session_state['AuditID'])}'"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        cursor.close()
+    except sqlite3.Error as error:
+        df=("Error while getting Audit Reviews", error)
+        st.error(df)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+def update_risk_weights(criteria,DsName,auditid,risk_weight,risk_category):
+     
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        #update audit status
+        query=f"UPDATE Risk_Master  SET Risk_Weight={risk_weight} , Risk_Category ='{risk_category}' WHERE Criteria='{criteria}' AND audit_id ={auditid} AND DataSetName ='{DsName}'"
+        #query=f"UPDATE  SET Status ='Audited' WHERE `index` = {data_id}"
+        #query=f"SELECT Review from Audit_AR where DataSetName='{DsName}' AND CompanyName='{comp_name}'"
+        #st.write(query)
+        cursor.execute(query)
+        sqliteConnection.commit()
+        cursor.close()
+        auditstatus=("Risk Weights updated....")
+        st.info(auditstatus)
+    except sqlite3.Error as error:
+        auditstatus=("Error while Updating Audit Status", error)
+        st.error(auditstatus)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+            
+    return auditstatus
+
+
+def update_verification_criteria(criteria,old_criteria,DsName,auditid,risk_weight,risk_category):
+     
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        #update audit status
+        query=f"UPDATE DSCriteria SET Verification_Criteria={criteria}, Risk_Weight={risk_weight} , Risk_Category ='{risk_category}' WHERE Verification_Criteria='{old_criteria}' AND audit_id ={auditid} AND DataSetName ='{DsName}'"
+        #query=f"UPDATE  SET Status ='Audited' WHERE `index` = {data_id}"
+        #query=f"SELECT Review from Audit_AR where DataSetName='{DsName}' AND CompanyName='{comp_name}'"
+        #st.write(query)
+        cursor.execute(query)
+        sqliteConnection.commit()
+        cursor.close()
+        auditstatus=("Verification Criteria updated....")
+        st.info(auditstatus)
+    except sqlite3.Error as error:
+        auditstatus=("Error while Updating Verification Criteria", error)
+        #st.error(auditstatus)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+            
+    return auditstatus
+
+def get_dataset_values(DSname):
+    #this is for auditing
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        values={}
+        #get total count of DS
+        query=f"SELECT count(*) from '{DSname}'"
+        cursor.execute(query)
+        total_records=cursor.fetchone()
+        if total_records[0]!= None:
+            total_records=int(total_records[0])
+        #st.write(total_records,total_records)
+            values['total_records']=total_records
+        else:
+            values['total_records']=0
+        #get total count of DS where status=Audited
+        query=f"SELECT count(*) from '{DSname}' WHERE status= 'Audited'"
+        cursor.execute(query)
+        total_audited=cursor.fetchone()
+        if total_audited[0]!= None:
+            #st.write(total_audited)
+            total_audited=int(total_audited[0])
+        #st.write(total_audited)
+            values['total_audited']=total_audited
+        else:
+            values['total_audited']=0
+        #st.write(values)
+        cursor.close()
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return values
+
+
+def get_audit_values(Audit_id):
+    #this is for audit queries v&v per audit
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        values={}
+        #get total count of audit queries v&v
+        query=f"SELECT count(*) from Audit_Queries WHERE Status= 'Pending' AND Audit_Id='{Audit_id}'"
+        cursor.execute(query)
+        total_records=cursor.fetchone()
+        if total_records[0]!= None:
+            total_queries_vv=int(total_records[0])
+        #st.write(total_records,total_records)
+            values['total_queries_vv']=total_queries_vv
+        else:
+            values['total_queries_vv']=0
+        
+        #get total count of audit queries AR
+        query=f"SELECT count(*) from Audit_AR WHERE status= 'Pending' AND Audit_Id='{Audit_id}'"
+        cursor.execute(query)
+        total_records=cursor.fetchone()
+        if total_records[0]!= None:
+            total_queries_ar=int(total_records[0])
+        #st.write(total_records,total_records)
+            values['total_queries_ar']=total_queries_ar
+        else:
+            values['total_queries_ar']=0
+       
+        cursor.close()
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return values
+
+def get_values_id_dsn(Audit_id,datasetname):
+    #this is for audit queries v&v- per DS
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        values={}
+        #get total count of audit queries v&v
+        query=f"SELECT count(*) from Audit_Queries WHERE Status= 'Pending' AND Audit_Id='{Audit_id}' AND DataSetName='{datasetname}'"
+        cursor.execute(query)
+        total_records=cursor.fetchone()
+        if total_records[0]!= None:
+            total_queries_vv=int(total_records[0])
+        #st.write(total_records,total_records)
+            values['total_queries_vv']=total_queries_vv
+        else:
+            values['total_queries_vv']=0
+        
+        #get total count of audit queries AR
+        query=f"SELECT count(*) from Audit_AR WHERE status= 'Pending' AND Audit_id='{Audit_id}'AND DataSetName='{datasetname}'"
+        cursor.execute(query)
+        total_records=cursor.fetchone()
+        if total_records[0]!= None:
+            total_queries_ar=int(total_records[0])
+        #st.write(total_records,total_records)
+            values['total_queries_ar']=total_queries_ar
+        else:
+            values['total_queries_ar']=0
+       
+       #get risk score for Queries of DS
+        query=f"SELECT sum (Risk_Weight) FROM queries_risk WHERE Audit_id='{Audit_id}'AND DataSetName='{datasetname}'"
+        cursor.execute(query)
+        total_records=cursor.fetchone()
+        #st.write(total_records)
+        if total_records[0]!= None:
+            auditrisk_audited=int(total_records[0])
+            #st.write(total_records,total_records)
+            values['auditrisk_audited']=auditrisk_audited
+        else:
+            values['auditrisk_audited']=0
+        
+        #get risk score for Dataset
+        query=f"SELECT sum (Risk_Weight) FROM Risk_Master WHERE Audit_id='{Audit_id}'AND DataSetName='{datasetname}'"
+        cursor.execute(query)
+        total_records=cursor.fetchone()
+        if total_records[0]!= None:
+            auditrisk_total=int(total_records[0])
+         #st.write(total_records,total_records)
+            values['auditrisk_total']=auditrisk_total
+        else:
+            values['auditrisk_total']=0
+        cursor.close()
+        #total Risk for DS= Total audited records * above
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return values
+
+def get_vv_quries(DSfilename,DSName,audit_id):
+    #this is for auditing
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        query=f"""
+        SELECT b.*,a.Id,a.Criteria, a.Condition, a.Cause, a.Effect, a.Risk_Weight, a.Risk_Category, a.Audited_By, a.Audited_on, a.reply, a.reply_by, a.reply_on, 
+            a.status_udate_by,a.status_update_remarks,a.Field
+            FROM queries_risk a LEFT JOIN  "{DSfilename}" b ON a.Data_Id = b."index" WHERE DataSetName='{DSName}'
+            AND audit_id ={audit_id} order by b."index";"""
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        cursor.close()
+    except sqlite3.Error as error:
+        df=("Error while creating Data Set Criteria", error)
+        st.error(df)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+def get_ar_queries(ds_name):
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        query=f"""SELECT Id,Criteria,Condition,Cause,Effect,Risk_Weight,Risk_Category,created_by,
+        created_on,reply,reply_by,reply_on,status_update_remarks,status_update_by,Review_File 
+        from Audit_AR where DataSetName='{ds_name}' and Audit_id='{int(st.session_state['AuditID'])}'
+        and status='Pending'"""
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        cursor.close()
+    except sqlite3.Error as error:
+        df=("Error while getting Audit Reviews", error)
+        
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+def get_Summary_audit_values(Audit_id,ds):
+    #this is for summary audit queries v&v per audit id
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+               
+        query=f"SELECT Criteria,count(Criteria) as 'Total Queries' FROM queries_risk WHERE Audit_id='{Audit_id}' AND DataSetName='{ds}' GROUP BY Criteria"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        #cursor.execute(query)
+        
+        cursor.close()
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+def get_Summary_audit_values_comp(Audit_id):
+    #this is for summary audit queries v&v per audit id
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+               
+        query=f"SELECT DataSetName as 'Data Set Name',count(Criteria) as 'Total Queries' FROM queries_risk WHERE Audit_id='{Audit_id}' GROUP BY DataSetName"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        #cursor.execute(query)
+        
+        cursor.close() 
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+def get_Summary_audit_values_riskweight(Audit_id,ds):
+    #this is for summary audit queries v&v per audit id
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+        #for V&V     
+        query=f"SELECT Criteria,sum(Risk_Weight) as 'Total Risk Weight' FROM queries_risk WHERE Audit_id='{Audit_id}' AND DataSetName='{ds}' GROUP BY Criteria"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        #for AR
+        query=f"SELECT Criteria,sum(Risk_Weight) as 'Total Risk Weight' FROM Audit_AR WHERE Audit_id='{Audit_id}' AND DataSetName='{ds}' GROUP BY Criteria"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        dfar = pd.DataFrame(sql_query)
+        cursor.close()
+        #merge 2 df
+        df=df.append(dfar,ignore_index=True)
+        
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+def get_Summary_audit_values_riskweight_comp(Audit_id):
+    #this is for summary audit queries v&v per audit id
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+               
+        query=f"SELECT DataSetName as 'Data Set Name',sum(Risk_Weight) as 'Total Risk Weight' FROM queries_risk WHERE Audit_id='{Audit_id}'  GROUP BY DataSetName"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        #cursor.execute(query)
+        
+        cursor.close()
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
+
+def get_Summary_audit_values_riskcategory(Audit_id,ds):
+    #this is for summary audit queries v&v per audit id
+    try:
+        sqliteConnection = sqlite3.connect('autoaudit.db')
+        cursor = sqliteConnection.cursor()
+               
+        query=f"SELECT Criteria,Risk_Category,sum(Risk_Weight) as 'Total Risk Weight' FROM queries_risk WHERE Audit_id='{Audit_id}' AND DataSetName='{ds}' GROUP BY Criteria,Risk_Category"
+        sql_query=pd.read_sql_query(query,sqliteConnection)
+        df = pd.DataFrame(sql_query)
+        #cursor.execute(query)
+        
+        cursor.close()
+    except sqlite3.Error as error:
+        message=("Error while creating Data Set Criteria", error)
+        st.error(message)
+    finally:
+        if sqliteConnection:
+            sqliteConnection.close()
+            #message=("The SQLite connection is closed")
+        
+    return df
