@@ -1,0 +1,47 @@
+<html>
+    <head>
+        
+        <title>{{page_title_text}}</title>
+    </head>
+    <body>
+        <img src="{{logo}}" width="2" height="2">
+        <h1>Audit Report</h1>
+        <h2>{{page_title_text}}</h2>
+        <h1>{{title_text}}</h1>
+            <table>
+                <tr>
+                  <th>Total Transactions:</th>
+                  <th>Transactions Audited:</th>
+                  <th>Total Queries:</th>
+                </tr>
+                <tr>
+                  <td>{{Total_tansactions}}</td>
+                  <td>{{Transactions_Audited}}</td>
+                  <td>{{Total_Queries}}</td>
+                </tr>
+             </table>
+             <table>
+                <tr>
+                  <th>Total Risk Score:</th>
+                  <th>Audited Risk Score:</th>
+                  <th>Risk Percentage:</th>
+                </tr>
+                <tr>
+                  <td>{{TotalRiskScore}}</td>
+                  <td>{{AuditedRiskScore}}</td>
+                  <td>{{RiskPercentage}}</td>
+                </tr>
+             </table>
+
+            <h2>{{DF1_heading}}</h2>
+            <img src="{{dataurl1}}" width="400" height="400">
+            {{df1}}
+            <h2>{{DF2_heading}}</h2>
+            <img src="{{dataurl2}}" width="400" height="400">
+            {{df2}}
+           
+            
+           
+            
+    </body>
+</html>
