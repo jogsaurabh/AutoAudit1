@@ -2,6 +2,9 @@
 #from distutils.command.build import build
 #from sys import audit
 #from turtle import onclick
+import os
+from email.policy import default
+from operator import index
 from matplotlib.cbook import report_memory
 import streamlit as st
 #from streamlit import caching
@@ -45,17 +48,18 @@ def show_audit():
             d_sname=st.selectbox("Select Data Set to Audit",optionsdf,key="selectdsname")
             ds_name=f"{st.session_state['Company']}_{(st.session_state['AuditID'])}_{d_sname}"
             #select dataset 
-                      
         
             
         if d_sname=="---":
             st.warning("Select Data Set to Audit")
         else:
+            
             df=get_dataset(ds_name)
             df.drop(['Status', 'Sampled'], axis=1,inplace=True)
-            tab1,tab2 =st.tabs(["   Vouching & Verification  ","   Analytical Review   "])
+            tab1,tab2 =st.tabs(["   Vouching & Verification  ","   Analytical & Other Reviews   "])
             with tab1:
                 st.header(d_sname)
+                st.success("Select Row to Audit")
                 #st.dataframe(df)
                     #builds a gridOptions dictionary using a GridOptionsBuilder instance.
                 builder = GridOptionsBuilder.from_dataframe(df)
@@ -67,114 +71,157 @@ def show_audit():
                 grid_response=AgGrid(df, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
                     #selelcted row to show in audit AGGrid
                 selected = grid_response['selected_rows']
-                with st.form("Auditing",clear_on_submit=True):
-                                            
+                if selected:
+                    #st.info("selected")
                     
-                    #selected = grid_response['data']
-                    selected_df = pd.DataFrame(selected)
-                    #rowinedx if added delet
-                    if '_selectedRowNodeInfo' in selected_df.columns:
-                        selected_df.drop(['_selectedRowNodeInfo'], axis=1,inplace=True)
-                        
-                    #show Vouching AGGrid
-                    builder_Audit=GridOptionsBuilder.from_dataframe(selected_df)
-                    builder_Audit.configure_default_column(editable=True)
-                    go_audit = builder_Audit.build()
-                    st.subheader("Vouching...If values are wrong...Double click to enter correct value.")
-                    #audited=AgGrid(selected_df, gridOptions=go_audit,update_mode= GridUpdateMode.VALUE_CHANGED,height = 80)
-                    audited=AgGrid(selected_df, gridOptions=go_audit,update_mode= GridUpdateMode.VALUE_CHANGED,height = 80)
-                    #st.text(audited["data"])
-                    audited_data=audited['data']
-                    #aud_df=pd.DataFrame(audited_data)
-                    #Verification
-                    st.subheader("Verification...Check Verification if YES else keep Unchecked.")
-                    df_verif=get_verification(d_sname,int(st.session_state['AuditID']))
-                    df_verif["Remarks"]=''
-                    builder_verif=GridOptionsBuilder.from_dataframe(df_verif)
-                    builder_verif.configure_selection(selection_mode="multiple",use_checkbox=True)
-                    builder_verif.configure_columns((['Remarks']),editable=True)
-                    go_verif=builder_verif.build()
-                    verif=AgGrid(df_verif, gridOptions=go_verif,update_mode=(GridUpdateMode.VALUE_CHANGED|GridUpdateMode.SELECTION_CHANGED))
-                    #st.write(verif)
-                    all_verif=verif["data"]
-                    df_all_verif=pd.DataFrame(all_verif)
-                    #st.dataframe(df_all_verif)
-                    if '_selectedRowNodeInfo' in df_all_verif.columns:
-                        df_all_verif.drop(['_selectedRowNodeInfo'], axis=1,inplace=True)
-                    #get DF for selected
-                    selected_verif=verif["selected_rows"]
-                    df_selected_ver=pd.DataFrame(selected_verif)
-                    #st.dataframe(df_selected_ver)
-                    if '_selectedRowNodeInfo' in df_selected_ver.columns:
-                        df_selected_ver.drop(['_selectedRowNodeInfo'], axis=1,inplace=True)
-                    
-                    #get df for not selected
-                    df_unselected_ver=pd.concat([df_all_verif,df_selected_ver]).drop_duplicates(keep=False).reset_index(drop=True)
-                    #st.dataframe(df_all_verif)
-                    #st.dataframe(df_unselected_ver)
-                    #add colums to selected    
-                    df_selected_ver.rename(columns={'Verification_Criteria':'Verification'},inplace=True)
-                    df_selected_ver['DataSetName']=d_sname
-                    df_selected_ver['CompanyName']=st.session_state['Company']
-                    df_selected_ver['Audit_Verification']="Yes"
-                    
-                        
-                    #add colums to Unselected    
-                    df_unselected_ver.rename(columns={'Verification_Criteria':'Verification'},inplace=True)
-                    df_unselected_ver['DataSetName']=d_sname
-                    df_unselected_ver['CompanyName']=st.session_state['Company']
-                    df_unselected_ver['Audit_Verification']="No"  
-                    if 'rowIndex' in df_unselected_ver.columns:
-                        df_unselected_ver.drop(['rowIndex'], axis=1,inplace=True)
-                        
-                    #st.dataframe(df_selected_ver)   
-                    #st.dataframe(df_unselected_ver)  
-                    Submit_audit= st.form_submit_button("Submit")
-                    if Submit_audit:
-                        if  audited_data.empty:
-                            st.error("Select row to Audit")
-                        else:
-                            #add  in database
-                            data_id=int(audited_data.iloc[0,0])
-                            for col in audited_data.columns:
-                                if audited_data[col].iloc[0] != selected_df[col].iloc[0]:
-                                    #st.write(audited_data[col].iloc[0],col)
-                                    audit_value=audited_data[col].iloc[0]
-                                    accountin_value=selected_df[col].iloc[0]
-                                    remarks=f"{col} as per Records is- {accountin_value} ; but as per Audit is- {audit_value} ."
-                                    #st.write(data_id,col,str(audit_value),ds_name,comp_name)
-                                    vouching=insert_vouching(data_id,col,str(audit_value),remarks,d_sname,st.session_state['Company'])
-                                    st.info(vouching)
-                                    
+                    with st.form("Auditing",clear_on_submit=True):
+                                                
+                        colum1,colum2 =st.columns(2)
+                        with colum1:
+                            #selected = grid_response['data']
+                            selected_df = pd.DataFrame(selected)
+                            
+                            #rowinedx if added delet
+                            if '_selectedRowNodeInfo' in selected_df.columns:
+                                selected_df.drop(['_selectedRowNodeInfo'], axis=1,inplace=True)
+                            #st.dataframe(selected_df)
+                            data_id=int(selected_df.iloc[0,0])
+                            #st.write(data_id)
+                            #st.dataframe(selected_df.describe())
+                            #st.write(selected_df.info())
+                            selected_df=selected_df.applymap(str)
+                            selected_df=selected_df.transpose()
+                            selected_df["Field"]=selected_df.index
+                            selected_df.rename(columns={0:'Value'},inplace=True)
+                            selected_df['Audit_Value']=selected_df['Value']
+                            selected_df["Cause"]=''
+                            selected_df["Effect"]=''
+                            selected_df=selected_df[['Field','Value','Audit_Value','Cause','Effect']]
+                            #selected_df.reset_index()
+                            #selected_df=selected_df.rename(columns={'0':'Value'},inplace=True)
+                            #st.dataframe(selected_df)  
+                            #show Vouching AGGrid
+                            builder_Audit=GridOptionsBuilder.from_dataframe(selected_df)
+                            #builder_Audit.configure_default_column(editable=True)
+                            builder_Audit.configure_columns((['Audit_Value','Cause','Effect']),editable=True)
+                            go_audit = builder_Audit.build()
+                            st.success("Vouching...If values are wrong...Double click to enter correct value.")
+                            #audited=AgGrid(selected_df, gridOptions=go_audit,update_mode= GridUpdateMode.VALUE_CHANGED,height = 80)
+                            audited=AgGrid(selected_df, gridOptions=go_audit,update_mode=(GridUpdateMode.VALUE_CHANGED|GridUpdateMode.SELECTION_CHANGED))
+                            #st.write(veri
+                            audited_data=audited['data']
+                            #df_audited_data=pd.DataFrame(audited_data)
+                            #aud_df=pd.DataFrame(audited_data)
+                            #st.dataframe(df_audited_data)
+                            #st.write(audited_data)
+                        with colum2:
                             currentime=datetime.now()
-                            #for verification =yes insert in Audit_queries
-                            df_selected_ver['Data_Id']=data_id
-                            df_selected_ver['Audit_Verification']="Yes"
-                            df_selected_ver['Audited_on']=currentime
-                            df_selected_ver['Audited_By']=st.session_state['User']
-                            df_selected_ver['Audit_Name']=st.session_state['Audit']
-                            df_selected_ver['Audit_id']=int(st.session_state['AuditID'])
-                            df_selected_ver['Status']="Closed"
-                            very=add_audit_verification(df_selected_ver)
+                            #Verification
+                            st.success("Check Verification if Criteria is met, else keep Unchecked.")
+                            df_verif=get_verification(d_sname,int(st.session_state['AuditID']))
+                            df_verif["Cause"]=''
+                            df_verif["Effect"]=''
+                            df_verif.drop(['Risk_Weight','Risk_Category'], axis=1,inplace=True)
                             
+                            builder_verif=GridOptionsBuilder.from_dataframe(df_verif)
+                            builder_verif.configure_selection(selection_mode="multiple",use_checkbox=True)
+                            builder_verif.configure_columns((['Cause','Effect']),editable=True)
+                            go_verif=builder_verif.build()
+                            verif=AgGrid(df_verif, gridOptions=go_verif,update_mode=(GridUpdateMode.VALUE_CHANGED|GridUpdateMode.SELECTION_CHANGED))
+                            #st.write(verif)
+                            all_verif=verif["data"]
+                            df_all_verif=pd.DataFrame(all_verif)
+                            #st.dataframe(df_all_verif)
+                            if '_selectedRowNodeInfo' in df_all_verif.columns:
+                                df_all_verif.drop(['_selectedRowNodeInfo'], axis=1,inplace=True)
+                            #get DF for selected
+                            selected_verif=verif["selected_rows"]
+                            df_selected_ver=pd.DataFrame(selected_verif)
+                            #st.dataframe(df_selected_ver)
+                            if '_selectedRowNodeInfo' in df_selected_ver.columns:
+                                df_selected_ver.drop(['_selectedRowNodeInfo'], axis=1,inplace=True)
                             
-                            #for verification =No insert in Audit_queries
-                            df_unselected_ver['Data_Id']=data_id
-                            df_unselected_ver['Audit_Verification']="No"
-                            df_unselected_ver['Audited_on']=currentime
-                            df_unselected_ver['Audited_By']=st.session_state['User']
-                            df_unselected_ver['Audit_Name']=st.session_state['Audit']
-                            df_unselected_ver['Audit_id']=int(st.session_state['AuditID'])
-                            very=add_audit_verification(df_unselected_ver)
-                            st.info(very)
+                            #get df for not selected
+                            df_unselected_ver=pd.concat([df_all_verif,df_selected_ver]).drop_duplicates(keep=False).reset_index(drop=True)
+                            #st.dataframe(df_all_verif)
                             #st.dataframe(df_unselected_ver)
-                            #update audit status
-                            update_audit=update_audit_status(data_id,ds_name)
-                            #refresh AGGrid-update_mode=GridUpdateMode.MODEL_CHANGED also added with OR
-                            #df = df.drop([0],inplace=True)
-                            st.info(update_audit)
+                            #add colums to selected    
+                            df_selected_ver.rename(columns={'Verification_Criteria':'Criteria'},inplace=True)
+                            df_selected_ver['DataSetName']=d_sname
+                            df_selected_ver['CompanyName']=st.session_state['Company']
+                            df_selected_ver['Condition']="Yes"
                             
-                            #auditnext()
+                                
+                            #add colums to Unselected    
+                            df_unselected_ver.rename(columns={'Verification_Criteria':'Criteria'},inplace=True)
+                            df_unselected_ver['DataSetName']=d_sname
+                            df_unselected_ver['CompanyName']=st.session_state['Company']
+                            df_unselected_ver['Condition']="No"  
+                            if 'rowIndex' in df_unselected_ver.columns:
+                                df_unselected_ver.drop(['rowIndex'], axis=1,inplace=True)
+                                
+                            #st.dataframe(df_selected_ver)   
+                            #st.dataframe(df_unselected_ver)  
+                            Submit_audit= st.form_submit_button("Submit")
+                            if Submit_audit:
+                                if  audited_data.empty:
+                                    st.error("Select row to Audit")
+                                else:
+                                    #add  in database####new code required
+                                    #data_id=int(audited_data.iloc[0,0])
+                                    
+                                    audited_data = audited_data[audited_data['Value'] != audited_data['Audit_Value']]
+                                    audited_data['DataSetName']=d_sname
+                                    audited_data['CompanyName']=st.session_state['Company']
+                                    audited_data['Data_Id']=data_id
+                                    audited_data['Audited_on']=currentime
+                                    audited_data['Audited_By']=st.session_state['User']
+                                    audited_data['Audit_Name']=st.session_state['Audit']
+                                    audited_data['Audit_id']=int(st.session_state['AuditID'])
+                                    audited_data['Condition']=audited_data['Field']+': Value asper Records is- '+audited_data['Value']+'; but as per Audit is-'+audited_data['Audit_Value']
+                                    audited_data['Criteria']=audited_data['Field']+': should be Correct'
+                                    del audited_data['Value'] 
+                                                          
+                                    #st.dataframe(audited_data)
+                                    vouching=insert_vouching(audited_data)
+                                    st.info(vouching)
+                                            
+                                    
+                                    #for verification =yes insert in Audit_queries
+                                    df_selected_ver['Data_Id']=data_id
+                                    df_selected_ver['Condition']="Yes"
+                                    df_selected_ver['Audited_on']=currentime
+                                    df_selected_ver['Audited_By']=st.session_state['User']
+                                    df_selected_ver['Audit_Name']=st.session_state['Audit']
+                                    df_selected_ver['Audit_id']=int(st.session_state['AuditID'])
+                                    df_selected_ver['Status']="Closed"
+                                    very=add_audit_verification(df_selected_ver)
+                                    
+                                    
+                                    #for verification =No insert in Audit_queries
+                                    df_unselected_ver['Data_Id']=data_id
+                                    df_unselected_ver['Condition']="No"
+                                    df_unselected_ver['Audited_on']=currentime
+                                    df_unselected_ver['Audited_By']=st.session_state['User']
+                                    df_unselected_ver['Audit_Name']=st.session_state['Audit']
+                                    df_unselected_ver['Audit_id']=int(st.session_state['AuditID'])
+                                    very=add_audit_verification(df_unselected_ver)
+                                    st.info(very)
+                                    #st.dataframe(df_unselected_ver)
+                                    #update audit status
+                                    update_audit=update_audit_status(data_id,ds_name)
+                                    #refresh AGGrid-update_mode=GridUpdateMode.MODEL_CHANGED also added with OR
+                                    #df = df.drop([0],inplace=True)
+                                    st.info(update_audit)
+                                    #del & clear DataFrame
+                                    del [[df_verif,df_unselected_ver,df_selected_ver,audited_data,selected_df,df_all_verif]]
+                                    df_all_verif=pd.DataFrame()
+                                    df_unselected_ver=pd.DataFrame()
+                                    df_selected_ver=pd.DataFrame()
+                                    audited_data=pd.DataFrame()
+                                    selected_df=pd.DataFrame()
+                                    df_verif=pd.DataFrame()
+                                #auditnext()
                        
                         
                         
@@ -183,45 +230,103 @@ def show_audit():
                 st.header(d_sname)
                 #add Reveiew Remark
                 #show in DF
-                st.title("Add Review Comments for  Data Set...")
+                st.success("Add Analytical Review & Other Comments for Data Set...")
                 # add verification list
-                Reveiew=get_ar_for_ds(d_sname)
-                cl1,cl2 =st.columns(2)
-                with cl1:
-                    with st.form("Analytical Review Comments",clear_on_submit=True):
-                        Areview=st.text_area("Enter Comments")
-                        # Every form must have a submit button.
-                        submitted = st.form_submit_button("Submit")
-                        if submitted:
-                            #add above to database
-                            Reveiew=add_analytical_review(Areview,d_sname,st.session_state['Company'])
+                #st.markdown("""---""")
+                Reveiew=get_ar_for_ds(d_sname)  
+                st.header("Add Comments")
+                with st.form("Analytical Review & Other Comments",clear_on_submit=True):
+                    criteria=st.text_input("Criteria",key='t1')
+                    condition=st.text_input("Condition",key='t2')
+                    cause=st.text_input("Cause",key='t3')
+                    effect=st.text_input("Effect",key='t4')
+                    #reviewfile=st.file_uploader("Upload Remarks/ Calculation File",type=['pdf','xlsx','docx'],key='reviewfile11')
+                    
+                                    
+                                    #with open(os.path.join("rev_files",rev_filename), 'rb') as f:
+                                        #st.download_button('Download File', f, file_name=rev_filename)    
+                    c1,c2 =st.columns(2)
+                    with c1:
+                        risk_weight=st.slider("Risk Weights",min_value=1,max_value=10,key='slider1')
+                                                        
+                        if risk_weight >=1 and risk_weight <=3:
+                            risk_category='Low'
+                        elif risk_weight >=4 and risk_weight <=7:
+                            risk_category='Medium'
+                        else:
+                            risk_category='High'
+                    with c2:
+                        #file_name=st.text_input("Enter File Name without extention...Name should be Unique",key='stfn1')
+                        reviewfile=st.file_uploader("Upload Remarks/ Calculation File",type=['pdf','xlsx','docx'],key='reviewfile1')
+                        #if reviewfile is not None:
+                            #st.write("file_name")
+                            #file_name=st.text_input("Enter File Name...Name should be Unique",key='stfn')                
+                    #reviewfile=st.file_uploader("Upload Remarks/ Calculation File",type=['pdf','xlsx','docx'],key='reviewfile1')
+                        #if reviewfile is not None:
+                        file_name=st.text_input("Enter File Name without extention...Name should be Unique",key='stfn')
+                    submitted = st.form_submit_button("Submit")                   
+                    #submitted = st.button("Submit",key="sumbitform1")
+                    if submitted:
+                        if criteria and condition:
+                            if reviewfile is not None:
+                                if file_name:
+                                    if reviewfile.type=="application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                                        extn="docx"
+                                    elif reviewfile.type=="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+                                        extn='xlsx'
+                                    else :
+                                        extn='pdf'
+                                    #if st.button("Upload file",key='uf1'):
+                                    rev_filename=f"{(st.session_state['AuditID'])}{d_sname}_{file_name}.{extn}"
+                                    file_name=f"{file_name}.{extn}"
+                                    with open(os.path.join("rev_files",rev_filename),"wb") as f: 
+                                        f.write(reviewfile.getbuffer()) 
+                                    
+                                    #with open(rev_filename, 'rb') as f:
+                                    Reveiew=add_analytical_review(criteria,condition,cause,effect,d_sname,st.session_state['Company'],risk_weight,risk_category,file_name)
+                                else:
+                                    st.error("Enter File Name")    
+                            else:
+                                file_name=None
+                                #reviws_table.add_row({"Criteria":"criteria","Condition":"condition","Cause":"cause","Effect":"effect"})
+                                Reveiew=add_analytical_review(criteria,condition,cause,effect,d_sname,st.session_state['Company'],risk_weight,risk_category,file_name)
+                        else:
+                            st.error("Criteria & Condition are Mandatory fields")
+
+                    
                 
-                with cl2:
-                    st.header("Analytical Review Comments")
-                    st.table(Reveiew)
-                    
+                with st.expander("Analytical Review & Other Comments"):
+                    st.success(f"Analytical Review & Other Comments for {d_sname}")
+                    st.dataframe(Reveiew)
+                    #reviws_table=st.table(Reveiew)
                 st.markdown("""---""")   
-                col1,col2 =st.columns(2)
+                st.info("Analyse Data")
                 ds=get_entire_dataset(ds_name)
-                with col1:
-                    st.header("Data Set")
-                    #st.dataframe(ds)
-                    ds=AgGrid(ds)
-                    
-                with col2:
-                    ds=get_entire_dataset(ds_name)
-                    st.header("Stats Summary")
+                ds=get_entire_dataset(ds_name)
+                with st.expander("View Statistical Summary"):
+                    st.success(f"Stats Summary for {d_sname}")
                     st.dataframe(ds.describe())
+                with st.expander('Analyse Data Set'):
+                    st.success(f"Data Set for {d_sname}")
+                    builder = GridOptionsBuilder.from_dataframe(ds)
+                    builder.configure_pagination(enabled=True,paginationPageSize=15,paginationAutoPageSize=False)
+                    go = builder.build()
+                    AgGrid(ds,gridOptions=go)
+                    csv=ds.to_csv().encode('utf-8')
+                    st.download_button("Download csv file...",csv,f"{d_sname}.csv")
+               
+                    
             
-                st.markdown("""---""")
-                st.header("Generate Detailed Statistical Analysis Report")
-                #Click to generate pandas profiling report
-                if st.button("Generate Analytical Report"):
-                    with st.expander("Report on Data Set"):
-                        #profile = ProfileReport(df, title="Data Profiling Report")
-                        #ProfileReport(profile)
-                        pr = df.profile_report()
-                        st_profile_report(pr)
+                
+                with st.expander('Generate Detailed Statistical Analysis Report'):
+                    st.success(f"Statistical Analysis Report for {d_sname}")
+                    #Click to generate pandas profiling report
+                    if st.button("Generate Analytical Report"):
+                        
+                            #profile = ProfileReport(df, title="Data Profiling Report")
+                            #ProfileReport(profile)
+                            pr = df.profile_report()
+                            st_profile_report(pr)
                 
     
 headerSection = st.container()

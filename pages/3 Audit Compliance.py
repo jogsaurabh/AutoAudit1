@@ -1,9 +1,10 @@
 from datetime import datetime
 from functions import get_user_rights,get_active_users,add_datato_ds,get_verification,get_audit,add_audit_verification
 from functions import create_user,check_login,get_dsname_personresponsible,assign_user_rights,create_company,get_company_names,get_pending_queries
-from functions import create_dataset,add_verification_criteria,get_dsname,get_entire_dataset,get_auditee_comp
-from functions import get_dataset,update_query_status,add_analytical_review,insert_vouching,update_audit_status,get_ar_for_ds,add_query_reply
+from functions import update_query_status_ar,get_ar_queries,get_vv_quries,create_dataset,add_verification_criteria,get_dsname,get_entire_dataset,get_auditee_comp
+from functions import add_query_reply_AR,get_dataset,update_query_status,add_analytical_review,insert_vouching,update_audit_status,get_ar_for_ds,add_query_reply
 import pandas as pd
+import os
 import streamlit as st
 from PIL import Image
 image = Image.open('autoaudit_t.png')
@@ -22,64 +23,139 @@ def show_update_audit_status():
         st.write(f"User:-{st.session_state['User']}",f"  | Company:-{st.session_state['Company']}",
                  f"  | Audit:-{st.session_state['Audit']}",f"  | Role:-{st.session_state['Role']}")
         #get pending queries for DS current Audit
-        pending=get_pending_queries(auditid)
+        #pending=get_pending_queries(auditid)
         st.title("Update Status of Audit Queries")
         st.markdown("""---""")
-        #st.dataframe(pending)
-        #get dsnames with personrisponsible= auditee
-        pr=st.session_state['User']
-        #df_dsnames=get_dsname_personresponsible(auditid,pr)
-        #merge DSNmae with Queries to get person risponsible
-        #pending=pd.merge(pending,df_dsnames,how="left",left_on="DataSetName",right_on="DS")
-        #pending.dropna(subset=['DS'], how='all', inplace=True)
+        with st.sidebar.markdown("# Select Data Set"):
+            optionsdf=get_dsname(int(st.session_state['AuditID']))
+            #add blank row at begining of list
+            optionsdf.loc[-1]=['---']
+            optionsdf.index=optionsdf.index+1
+            optionsdf.sort_index(inplace=True)
+            d_sname=st.selectbox("Select Data Set to Audit",optionsdf,key="selectdsname")
+            ds_name=f"{st.session_state['Company']}_{(st.session_state['AuditID'])}_{d_sname}"
+            #select dataset 
         
-        pending_groupby=pending.groupby(['DataSetName'])['Field','Verification','Id'].count().rename(columns={'Status':'Pending','Id':'Total'})
-        pending_groupby.rename(columns={'Field':'Vouching'},inplace=True)
-        st.header("Summary of Pending Audit Queries")
-        rep1,rep2 =st.columns(2)
-        with rep1:
-            st.dataframe(pending_groupby.style.set_properties(**{'color':'red'},subset=['Vouching','Verification','Total']))
-        with rep2:
-            st.bar_chart(pending_groupby)
-        #show only relevent colums
-        st.markdown("""---""")
-        builder = GridOptionsBuilder.from_dataframe(pending.loc[:, ['DataSetName','Field','Data_Id','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
-        builder.configure_pagination(enabled=True,paginationPageSize=10,paginationAutoPageSize=False)
-        builder.configure_selection(selection_mode="single",use_checkbox=True)
-                    #builder.configure_default_column(editable=True)
-        go = builder.build()
-                    #uses the gridOptions dictionary to configure AgGrid behavior.
-        #grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED),theme="blue")
-        grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED),fit_columns_on_grid_load=True)
-
-                    #selelcted row to show in audit AGGrid
-        selected = grid_response['selected_rows']
-        #st.dataframe(pending.loc[:, ['DataSetName','Field','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
-        
-        if selected:
-            #st.write(selected)
-            one ,two= st.columns(2)
-            with one:
-                reply=st.text_area("Add Status Update Remarks to Selected Query",key="ta")
-            with two:
-                close=st.selectbox("Close / Pending",["Closed","Pending"],key="cq")
-            submit=st.button("Submit",key="submitquery")
-            if submit:
-                    currentime=datetime.now()
-                    id=int(selected[0]['Id'])
-                    currentremark=selected[0]['status_update_remarks']
-                    if currentremark is None:
-                        currentremark=""
-                        reply=f"{reply}-(by- {st.session_state['User']} , on {currentime})"
-                    else:
-                        reply=f"{currentremark} ;\n{reply}-(by- {st.session_state['User']} , on {currentime})"
-                    #st.text(reply)
-                    #st.text(id)
-                    #update remark
-                    updatereply=update_query_status(id,reply,close)
-                    st.success(updatereply)
+        if d_sname=="---":
+            st.warning("Select Data Set to Update Audit Status")
         else:
-            st.info("Selected a Row to Update Query Status")
+            st.success(f"Update Remarks for {d_sname} Queries")
+            with st.expander("Vouching & Verification Queries"):
+               
+                pending=get_vv_quries(f"{st.session_state['Company']}_{st.session_state['AuditID']}_{d_sname}",d_sname,int(st.session_state['AuditID']))
+                #st.dataframe(pending)
+                builder = GridOptionsBuilder.from_dataframe(pending)
+                #.loc[:, ['DataSetName','Field','Data_Id','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
+                builder.configure_pagination(enabled=True,paginationPageSize=10,paginationAutoPageSize=False)
+                builder.configure_selection(selection_mode="single",use_checkbox=True)
+                            #builder.configure_default_column(editable=True)
+                #cc=JsCode("return{color: 'red'}")
+                builder.configure_columns(['Criteria','Condition','Cause','Effect','Reply'],cellStyle={'color': 'red'})
+                go = builder.build()
+                            #uses the gridOptions dictionary to configure AgGrid behavior.
+                #grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED),theme="blue")
+                grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+
+                            #selelcted row to show in audit AGGrid
+                csv=pending.to_csv().encode('utf-8')
+                st.download_button("Download csv file",csv,f"{d_sname}.csv")
+                selected = grid_response['selected_rows']
+                #st.dataframe(pending.loc[:, ['DataSetName','Field','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
+                
+                if selected:
+                    #st.write(selected)
+                    currentremark=selected[0]['status_update_remarks']
+                    currentquryreply=selected[0]['Reply']
+                    one ,two= st.columns(2)
+                    with one:
+                        "Auditee Reply:-"
+                        st.warning(currentquryreply)
+                        "Current Remarks:-"
+                        st.warning(currentremark)
+                       
+                    with two:
+                        reply=st.text_area("Add Status Update Remarks to Selected Query",key="ta")
+                        close=st.selectbox("Close / Pending",["Closed","Pending"],key="cq")
+                    submit=st.button("Submit",key="submitquery")
+                    if submit:
+                            currentime=datetime.now()
+                            id=int(selected[0]['Id'])
+                            #currentremark=selected[0]['status_update_remarks']
+                            if currentremark is None:
+                                currentremark=""
+                                reply=f"{reply}-(by- {st.session_state['User']} , on {currentime})"
+                            else:
+                                reply=f"{currentremark} ;\n{reply}-(by- {st.session_state['User']} , on {currentime})"
+                            #st.text(reply)
+                            #st.text(id)
+                            #update remark
+                            updatereply=update_query_status(id,reply,close)
+                            st.success(updatereply)
+                else:
+                    st.info("Selected a Row to Update Query Status")
+            st.markdown("""---""")
+            with st.expander("Analytical Review & Other Queries"):
+                        
+                            pending=get_ar_queries(d_sname)
+                            #st.dataframe(pending)
+                            builder = GridOptionsBuilder.from_dataframe(pending)
+                            #.loc[:, ['DataSetName','Field','Data_Id','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
+                            builder.configure_pagination(enabled=True,paginationPageSize=10,paginationAutoPageSize=False)
+                            builder.configure_selection(selection_mode="single",use_checkbox=True)
+                                        #builder.configure_default_column(editable=True)
+                            #cc=JsCode("return{color: 'red'}")
+                            builder.configure_columns(['Criteria','Condition','Cause','Effect','Reply'],cellStyle={'color': 'red'})
+                            go = builder.build()
+                                        #uses the gridOptions dictionary to configure AgGrid behavior.
+                            #grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED),theme="blue")
+                            grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+
+                                        #selelcted row to show in audit AGGrid
+                            csv=pending.to_csv().encode('utf-8')
+                            st.download_button("Download csv file",csv,f"{d_sname}.csv")
+                            selected = grid_response['selected_rows']
+                            #st.dataframe(pending.loc[:, ['DataSetName','Field','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
+                            
+                            if selected:
+                                #st.write(selected)
+                                currentremark=selected[0]['status_update_remarks']
+                                currentquryreply=selected[0]['reply']
+                                filename=selected[0]['Review_File']
+                                rev_filename=f"{(st.session_state['AuditID'])}{d_sname}_{filename}"
+                                #st.write(filename)
+                                if filename:
+                                    #downloadfle=st.button("Download File Attachment",key='shoattach1')
+                                    #if downloadfle:
+                                    with open(os.path.join("rev_files",rev_filename), 'rb') as f:
+                                        st.download_button('Download Attachment', f, file_name=filename)    
+                  
+                                one ,two= st.columns(2)
+                                
+                                with one:
+                                    "Auditee Reply:-"
+                                    st.warning(currentquryreply)
+                                    "Current Remarks:-"
+                                    st.warning(currentremark)
+                                with two:
+                                    reply=st.text_area("Add Status Update Remarks to Selected Query",key="ta1")
+                                    close=st.selectbox("Close / Pending",["Closed","Pending"],key="cq2")
+                                submit=st.button("Submit",key="submitquery2")
+                                if submit:
+                                        currentime=datetime.now()
+                                        id=int(selected[0]['Id'])
+                                        #currentremark=selected[0]['status_update_remarks']
+                                        if currentremark is None:
+                                            currentremark=""
+                                            reply=f"{reply}-(by- {st.session_state['User']} , on {currentime})"
+                                        else:
+                                            reply=f"{currentremark} ;\n{reply}-(by- {st.session_state['User']} , on {currentime})"
+                                        #st.text(reply)
+                                        #st.text(id)
+                                        #update remark
+                                        updatereply=update_query_status_ar(id,reply,close)
+                                        st.success(updatereply)
+                            else:
+                                st.info("Selected a Row to Update Query Status")
 
         
 
@@ -150,60 +226,123 @@ def show_auditee():
         st.write(f"User:-{st.session_state['User']}",f"  | Company:-{st.session_state['Company']}",
                  f"  | Audit:-{st.session_state['Audit']}",f"  | Role:-{st.session_state['Role']}")
         #get pending queries for DS current Audit
-        pending=get_pending_queries(auditid)
         st.title("Reply to Audit Queries")
-        
-        #st.dataframe(pending)
-        #get dsnames with personrisponsible= auditee
+        #pending=get_pending_queries(auditid)
+        st.markdown("""---""")
         pr=st.session_state['User']
-        df_dsnames=get_dsname_personresponsible(auditid,pr)
-        #merge DSNmae with Queries to get person risponsible
-        pending=pd.merge(pending,df_dsnames,how="left",left_on="DataSetName",right_on="DS")
-        pending.dropna(subset=['DS'], how='all', inplace=True)
-        
-        pending_groupby=pending.groupby(['DataSetName'])['Field','Verification','Id'].count().rename(columns={'Status':'Pending','Id':'Total'})
-        pending_groupby.rename(columns={'Field':'Vouching'},inplace=True)
-        st.header("Summary of Pending Audit Queries")
-        rep1,rep2 =st.columns(2)
-        with rep1:
-            st.dataframe(pending_groupby.style.set_properties(**{'color':'red'},subset=['Vouching','Verification','Total']))
-        with rep2:
-            st.bar_chart(pending_groupby)
-        #show only relevent colums
-        builder = GridOptionsBuilder.from_dataframe(pending.loc[:, ['DataSetName','Field','Data_Id','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
-        builder.configure_pagination(enabled=True,paginationAutoPageSize=False,paginationPageSize=10)
-        builder.configure_selection(selection_mode="single",use_checkbox=True)
-                    #builder.configure_default_column(editable=True)
-        go = builder.build()
-                    #uses the gridOptions dictionary to configure AgGrid behavior.
-        grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED),fit_columns_on_grid_load=True)
-                    #selelcted row to show in audit AGGrid
-        selected = grid_response['selected_rows']
-        #st.dataframe(pending.loc[:, ['DataSetName','Field','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
-        
-        if selected:
-            #st.write(selected)
-            reply=st.text_area("Add Reply to Selected Query",key="ta")
-            submit=st.button("Submit",key="submitquery")
-            if submit:
-                if not reply:
-                    st.warning("Reply can not be Blank")
-                else:
-                    currentime=datetime.now()
-                    id=int(selected[0]['Id'])
-                    currentremark=selected[0]['Reply']
-                    if currentremark is None:
-                        currentremark=""
-                        reply=f"{reply}-(by- {st.session_state['User']} , on {currentime})"
-                    else:
-                        reply=f"{currentremark} ;\n{reply}-(by- {st.session_state['User']} , on {currentime})"
-                    #st.text(reply)
-                    #st.text(id)
-                    #update remark
-                    updatereply=add_query_reply(id,reply)
-                    st.success(updatereply)
+        with st.sidebar.markdown(" Select Data Set"):
+            #optionsdf=get_dsname(int(st.session_state['AuditID']))
+            optionsdf=get_dsname_personresponsible(auditid,pr)
+            st.dataframe(optionsdf)
+            #add blank row at begining of list
+            optionsdf.loc[-1]=['---']
+            optionsdf.index=optionsdf.index+1
+            optionsdf.sort_index(inplace=True)
+            d_sname=st.selectbox("Select Data Set to Audit",optionsdf,key="selectdsname")
+            ds_name=f"{st.session_state['Company']}_{(st.session_state['AuditID'])}_{d_sname}"
+            #select dataset 
+        if d_sname=="---":
+            st.warning("Select Data Set to ReplyAudit Queries")
         else:
-            st.info("Selected a Row to reply Query")
+            st.success(f"Reply for {d_sname} Queries")
+            with st.expander("Vouching & Verification Queries"):
+                pending=get_vv_quries(f"{st.session_state['Company']}_{st.session_state['AuditID']}_{d_sname}",d_sname,int(st.session_state['AuditID']))   
+                builder = GridOptionsBuilder.from_dataframe(pending)
+                builder.configure_pagination(enabled=True,paginationAutoPageSize=False,paginationPageSize=10)
+                builder.configure_selection(selection_mode="single",use_checkbox=True)
+                builder.configure_columns(['Criteria','Condition','Cause','Effect','Reply'],cellStyle={'color': 'red'})
+                go = builder.build()
+                            #uses the gridOptions dictionary to configure AgGrid behavior.
+                grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+                            #selelcted row to show in audit AGGrid
+                csv=pending.to_csv().encode('utf-8')
+                st.download_button("Download csv file",csv,f"{d_sname}.csv")
+                selected = grid_response['selected_rows']
+                #st.dataframe(pending.loc[:, ['DataSetName','Field','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
+                
+                if selected:
+                    #st.write(selected)
+                    currentremark=selected[0]['Reply']
+                    replyremarks=selected[0]['status_update_remarks']
+                    
+                    co1,co2 =st.columns(2)
+                    with co1:
+                        "Current Auditee Reply:-"
+                        st.warning(currentremark)
+                        #st.write(selected)
+                    with co2:
+                        "Auditors Remarks for Reply:-"
+                        st.warning(replyremarks)
+                    reply=st.text_area("Add Reply to Selected Query",key="ta")
+                    submit=st.button("Submit",key="submitquery")
+                    if submit:
+                        if not reply:
+                            st.warning("Reply can not be Blank")
+                        else:
+                            currentime=datetime.now()
+                            id=int(selected[0]['Id'])
+                            currentremark=selected[0]['Reply']
+                            if currentremark is None:
+                                currentremark=""
+                                reply=f"{reply}-(by- {st.session_state['User']} , on {currentime})"
+                            else:
+                                reply=f"{currentremark} ;\n{reply}-(by- {st.session_state['User']} , on {currentime})"
+                            #st.text(reply)
+                            #st.text(id)
+                            #update remark
+                            updatereply=add_query_reply(id,reply)
+                            st.success(updatereply)
+                else:
+                    st.info("Selected a Row to Reply the Query")
+            st.markdown("""---""")
+            with st.expander("Analytical Review & Other Queries"):
+                pending=get_ar_queries(d_sname)
+                builder = GridOptionsBuilder.from_dataframe(pending)
+                builder.configure_pagination(enabled=True,paginationAutoPageSize=False,paginationPageSize=10)
+                builder.configure_selection(selection_mode="single",use_checkbox=True)
+                builder.configure_columns(['Criteria','Condition','Cause','Effect','Reply'],cellStyle={'color': 'red'})
+                go = builder.build()
+                            #uses the gridOptions dictionary to configure AgGrid behavior.
+                grid_response=AgGrid(pending, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+                            #selelcted row to show in audit AGGrid
+                csv=pending.to_csv().encode('utf-8')
+                st.download_button("Download csv file",csv,f"{d_sname}.csv")
+                selected = grid_response['selected_rows']
+                #st.dataframe(pending.loc[:, ['DataSetName','Field','Audit_Value','Remarks','Verification','Audit_Verification','Reply','status_update_remarks']])
+                
+                if selected:
+                    currentremark=selected[0]['reply']
+                    replyremarks=selected[0]['status_update_remarks']
+                    co1,co2 =st.columns(2)
+                    with co1:
+                        "Current Auditee Reply:-"
+                        st.warning(currentremark)
+                        #st.write(selected)
+                    with co2:
+                        "Auditors Remarks for Reply:-"
+                        st.warning(replyremarks)
+                        #st.write(selected)
+                    reply=st.text_area("Add Reply to Selected Query",key="ta1")
+                    submit=st.button("Submit",key="submitquery111")
+                    if submit:
+                        if not reply:
+                            st.warning("Reply can not be Blank")
+                        else:
+                            currentime=datetime.now()
+                            id=int(selected[0]['Id'])
+                            #currentremark=selected[0]['reply']
+                            if currentremark is None:
+                                currentremark=""
+                                reply=f"{reply}-(by- {st.session_state['User']} , on {currentime})"
+                            else:
+                                reply=f"{currentremark} ;\n{reply}-(by- {st.session_state['User']} , on {currentime})"
+                            #st.text(reply)
+                            #st.text(id)
+                            #update remark
+                            updatereply=add_query_reply_AR(id,reply)
+                            st.success(updatereply)
+                else:
+                    st.info("Selected a Row to Reply the Query")
             
 with headerSection:
     if 'User' not in st.session_state:

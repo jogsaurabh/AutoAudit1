@@ -1,10 +1,11 @@
 #from logging import PlaceHolder
+from dataclasses import field
 import streamlit as st
 import pandas as pd
 import numpy as np
 #from main import show_login_page,LoggedOut_Clicked
-from functions import get_user_rights,get_active_users,add_datato_ds,get_verification,get_audit
-from functions import create_user,check_login,assign_user_rights,create_company,get_company_names
+from functions import update_verification_criteria,update_risk_weights,get_user_rights,get_active_users,add_datato_ds,get_verification,get_audit
+from functions import get_risk_weights_ds_vouching,create_user,check_login,assign_user_rights,create_company,get_company_names,get_risk_weights_ds
 from functions import create_dataset,add_verification_criteria,get_dsname,get_entire_dataset,get_auditee_comp
 import sqlite3
 from PIL import Image
@@ -30,11 +31,17 @@ def show_masters():
         with st.sidebar.markdown("# Masters "):
             master_options = st.radio(
             'Masters- Dataset',
-            ('Add New Data Set', 'Add Records to Data Set','Add Check List','Compare with Audited Dataset'))            
+            ('Add New Data Set', 'Add Records to Data Set','Verification Check List','Set Risk Weights for Data Set','Compare with Audited Dataset'))            
         if master_options=='Add New Data Set':
             
-            st.title("Add New Data Set")
-            st.info(f"1) Check that - First Row contains column Headings..\n2) File is of - .xlsx type\n3) File contains only 1 sheet")
+            st.header("Add New Data Set")
+            ftype=st.radio("Select File Type",options=['CSV','XLSX'])
+            if ftype=='CSV':
+                st.success(f"1) Check that - First Row contains column Headings..\n2) File is of - .csv type\n3) No column should have name - index")
+            else:
+                st.success(f"1) Check that - First Row contains column Headings..\n2) File is of - .xlsx type\n3) File contains only 1 sheet\n4) No column should have name - index")
+            
+            #st.success(f"1) Check that - First Row contains column Headings..\n2) File is of - .xlsx type\n3) File contains only 1 sheet")
             #with st.form("New Dataset",clear_on_submit=True):
             #st.warning("Check ...First Column is Primary Key / Unique")
             auditee=get_auditee_comp()
@@ -44,24 +51,38 @@ def show_masters():
             else:
                 table_name=st.text_input("Enter Name of Data Set",key="tablename1")
                 person_responsible=st.selectbox("Select Auditee, who will answer Queries",auditee,key="sbperson_responsible")
-                uploaded_file = st.file_uploader("Upload a xlsx file",type='xlsx',key="uploadfile1")
+                if ftype=='CSV':
+                    uploaded_file = st.file_uploader("Upload a file",type='csv',key="uploadfile2")
+                else:
+                    uploaded_file = st.file_uploader("Upload a file",type='xlsx',key="uploadfile1")
                 if uploaded_file is not None:
                         st.write(uploaded_file.name)
                         filename=uploaded_file.name
-                        dataframe = pd.read_excel(uploaded_file,)
+                        if ftype=='CSV':
+                            dataframe = pd.read_csv(uploaded_file,encoding= 'unicode_escape')
+                        else:                            
+                            dataframe = pd.read_excel(uploaded_file)
                         st.dataframe(dataframe)
-                        if st.button("Create Data Set",key="b1"):
-                            if table_name:
-                                message=create_dataset(dataframe,table_name,comp_name,person_responsible)
-                                st.success(message) 
-                                #masters.empty()       
-                            else:
-                                st.error("Please enter Data Set Name")
-                                #masters.empty()
-                                
+                        #check if colum name=index or Index
+                        if 'Index' in dataframe.columns or 'index' in dataframe.columns:
+                            st.error(f'Column name with "Index" or "index" not allowed...Please change colum Name')
+                        else:
+                            if st.button("Create Data Set",key="b1"):
+                                if table_name:
+                                    message=create_dataset(dataframe,table_name,comp_name,person_responsible)
+                                    st.success(message) 
+                                    #masters.empty()       
+                                else:
+                                    st.error("Please enter Data Set Name")
+                                    #masters.empty()
+                        #del & clear DataFrame
+                        del [[dataframe]]
+                        dataframe=pd.DataFrame()   
         elif master_options=='Add Records to Data Set':
-                st.title("Add data to Existing Data Set")
-                st.warning("Check that all colums are Exactly same as per Existing Data Set, before uploading.")
+                st.header("Add data to Existing Data Set")
+                ftype=st.radio("Select File Type",options=['CSV','XLSX'])
+                
+                st.info("Check that all colums are Exactly same as per Existing Data Set, before uploading.")
                 #get list of ds_name for current company
                 ds_names=get_dsname(int(st.session_state['AuditID']))
                 if ds_names.empty:
@@ -69,85 +90,166 @@ def show_masters():
                 else:
                     col1, col2 =st.columns(2)
                     with col1:
-                        st.info("Select Data Set to add Records...")
+                        st.success("Select Data Set to add Records...")
                         ds_name=st.selectbox("Select Data Set Name...",ds_names,key="sb0")
                         st.write("Current Data Set")
                         dsname=f"{comp_name}_{st.session_state['AuditID']}_{ds_name}"
                         df=get_entire_dataset(dsname)
+                        df.drop(columns=['Status','Sampled'],inplace=True)
                         st.dataframe(df)
                     with col2:
-                        st.info("Check Data to Add to Current Data Set")
-                        uploaded_file = st.file_uploader("Upload a xlsx file",type='xlsx',key="1uploadfile1")
+                        st.success("Check Data to Add to Current Data Set")
+                        if ftype=='CSV':
+                            uploaded_file = st.file_uploader("Upload a file",type='csv',key="uploadfile22")
+                        else:
+                            uploaded_file = st.file_uploader("Upload a file",type='xlsx',key="uploadfile11")
+                
+                        #uploaded_file = st.file_uploader("Upload a file",type='xlsx',key="1uploadfile1")
                         
                     
                         if uploaded_file is not None:
-                                st.write("Data to Add ")
+                                #st.write("Data to Add ")
                                 #filename=uploaded_file.name
-                                dataframe = pd.read_excel(uploaded_file,)
-                                #dataframe['index'] = range(880, 880+len(dataframe))
+                                #dataframe = pd.read_excel(uploaded_file,)
+                                if ftype=='CSV':
+                                    dataframe = pd.read_csv(uploaded_file,encoding= 'unicode_escape')
+                                else:                            
+                                    dataframe = pd.read_excel(uploaded_file)
                                 dfmax=df['index'].max()
                                 dataframe.insert(0,"index",range(dfmax+1, dfmax+1 + len(dataframe)))
                                 st.dataframe(dataframe)
-                                
-                                if st.button("Append to Data Set",key="b11"):
-                                    message=add_datato_ds(dataframe,ds_name,comp_name)
-                                    st.success(message)
+                                dfcol1=df.columns.tolist()
+                                dfcol2=dataframe.columns.tolist()
+                                if dfcol1==dfcol2: 
+                                    if st.button("Append to Data Set",key="b11"):
+                                        message=add_datato_ds(dataframe,ds_name,comp_name)
+                                        st.success(message)
+                                else:
+                                    st.warning("Mismatch in Colums of two Datasets...please upload Data set with same structure.")
+                                #del & clear DataFrame
+                                del [[dataframe,df]]
+                                dataframe=pd.DataFrame()
+                                df=pd.DataFrame()  
                 
-                
-        elif master_options=='Add Check List':
-                st.title("Add Verification Check List for Data Set")
-                #get list of ds_name for current company
+        elif master_options=='Verification Check List':
+                st.header("Add Verification Check List")
+
+                st.success("Select Data Set Name")
                 ds_names=get_dsname(int(st.session_state['AuditID']))
-                ds_name=st.selectbox("Select Data Set Name...",ds_names,key="sb1")
-                if st.button("View Current check list",key="cc1"):
-                    veri_df=get_verification(ds_name,int(st.session_state['AuditID']))
-                    st.dataframe(veri_df)
-                #Chek_List=pd.DataFrame()
+                ds_name=st.selectbox("",ds_names,key="sb1")
+                    #if st.button("View Current check list",key="cc1"):
+                        #veri_df=get_verification(ds_name,int(st.session_state['AuditID']))
+                        #st.dataframe(veri_df)
+                    #Chek_List=pd.DataFrame()
                 with st.form("Verification Criteria",clear_on_submit=True):
-                    
-                    # Every form must have a submit button.
-                    #veri_df=get_verification(ds_name,comp_name)
-                    
-                    #st.dataframe(veri_df)
-                    
-                    Crtiteria=st.text_area("Enter Verification Criteria")
-                    submitted = st.form_submit_button("Submit")
-                    if submitted:
-                        #add above to database
-                        Chek_List=add_verification_criteria(Crtiteria,ds_name,comp_name)
-                        st.header("Verification Criteria")
+                        c1,c2 =st.columns(2)
+                        with c1:
+                            Crtiteria=st.text_area("Enter Verification Criteria")
+                        with c2:
+                            risk_weight=st.slider("Set Risk Weights",min_value=1,max_value=10,key='slider2')
+                            
+                            if risk_weight >=1 and risk_weight <=3:
+                                risk_category='Low'
+                            elif risk_weight >=4 and risk_weight <=7:
+                                risk_category='Medium'
+                            else:
+                                risk_category='High'
                         
+                                            
+                        submitted = st.form_submit_button("Submit")
+                        if submitted:
+                            #add above to database
+                            if Crtiteria:
+                                sta=add_verification_criteria(Crtiteria,ds_name,comp_name,risk_weight,risk_category)
+                                
+                            else:
+                                st.write('Criteria can not be blank.')
+                        
+                with st.expander("View Verification Criteria"):
+                        st.header("Verification Criteria")
                         veri_df=get_verification(ds_name,int(st.session_state['AuditID']))
                         st.dataframe(veri_df)
-                        
-                                    
-                
+                            
+                                                     
+        elif master_options=='Set Risk Weights for Data Set':
+            st.header("Update Risk Weights for each Field")
                 #st.dataframe(Chek_List,width=1000)
+            ds_names=get_dsname(int(st.session_state['AuditID']))
+            st.success('Select Data Set Name...')
+            ds=st.selectbox("",ds_names,key="sbrisk1")
+            #fields=get_fields_names(f"{comp_name}_{st.session_state['AuditID']}_{ds}")
+            #remove wher field is null
+            
+            criteria=get_risk_weights_ds_vouching(ds)
+            criteria=criteria[['Criteria']]
+            with st.form("Risk",clear_on_submit=True):
+                    c1,c2 =st.columns(2)
+                    with c1:
+                        criteria_selected=st.selectbox("Select Criteria",key="sf1",options=criteria)
+                    with c2:
+                        risk_weight=st.slider("Set Risk Weights",min_value=1,max_value=10,key='slider2')
+                        
+                        if risk_weight >=1 and risk_weight <=3:
+                            risk_category='Low'
+                        elif risk_weight >=4 and risk_weight <=7:
+                            risk_category='Medium'
+                        else:
+                            risk_category='High'
+                       
+                                        
+                    submitted = st.form_submit_button("Submit")
+                    if submitted:
+                        if not criteria.empty:
+                            #st.write(criteria)
+                            updaterisk=update_risk_weights(criteria_selected,ds,int(st.session_state['AuditID']),risk_weight,risk_category)
+                            #Chek_List=add_verification_criteria(Crtiteria,ds_name,comp_name,risk_weight,risk_category)
+                        else:
+                            st.error('Criteria can not be blank.')
+            
+            #st.write(field)
+            with st.expander("View Risk Weights"):
+                    st.header("Risk Weights")
+                    riskdf=get_risk_weights_ds_vouching(ds)
+                    #veri_df=get_verification(ds_name,int(st.session_state['AuditID']))
+                    st.dataframe(riskdf)
         else:
-                st.title("Compare Audited Dataset with Current Version of Dataset")
-                st.info("Upload Current Version of Dataset..")
-                st.warning("Check ...Data Structure is Excatly same, with same colum names")
+                st.header("Compare Audited Dataset with Current Version of Dataset")
+                st.success("1)Upload Current Version of Dataset...\n2)Check...Data Structure is Excatly same, with same colum names")
+                #st.info("Check ...Data Structure is Excatly same, with same colum names")
+                ftype=st.radio("Select File Type",options=['CSV','XLSX'])
+                
                 ds_names=get_dsname(int(st.session_state['AuditID']))
                 ds=st.selectbox("Select Data Set Name...",ds_names,key="sb2")
                 #ds_name=ds[0]
                 ds_name=f"{comp_name}_{st.session_state['AuditID']}_{ds}"
-                st.write(ds_name)
-                uploaded_file = st.file_uploader("Upload a xlsx file",type='xlsx',key="uploadfile2")
+                #st.write(ds_name)
+                if ftype=='CSV':
+                    uploaded_file = st.file_uploader("Upload a file",type='csv',key="uploadfile22")
+                else:
+                    uploaded_file = st.file_uploader("Upload a file",type='xlsx',key="uploadfile11")
+                
+                #uploaded_file = st.file_uploader("Upload a xlsx file",type='xlsx',key="uploadfile2")
 
                 if uploaded_file is not None:
-                    st.write(uploaded_file.name)
+                    #st.write(uploaded_file.name)
                     #filename=uploaded_file.name
-                    dataframe_new = pd.read_excel(uploaded_file)
+                    if ftype=='CSV':
+                        dataframe_new = pd.read_csv(uploaded_file,encoding= 'unicode_escape')
+                    else:                            
+                        dataframe_new = pd.read_excel(uploaded_file)
+                    #dataframe_new = pd.read_excel(uploaded_file)
                     #dataframe_new=dataframe_new.index.name = 'id'
                     #get audited DF
                     df=get_entire_dataset(ds_name)
                     #df.drop(columns=['Status','index','Sampled'],inplace=True)
                     df.drop(columns=['Status','index','Sampled'],inplace=True)
                     #df.sort_index(inplace=True)
-                    st.write("Audited Dataset")
-                    st.dataframe(df)
-                    st.write("Current Version of Dataset")
-                    st.dataframe(dataframe_new)
+                    st.success("Audited Dataset")
+                    with st.expander(""):
+                        st.dataframe(df)
+                    st.success("Current Version of Dataset")
+                    with st.expander(""):
+                        st.dataframe(dataframe_new)
                     dfcol1=df.columns.tolist()
                     dfcol2=dataframe_new.columns.tolist()
                     #indexkey=df.columns[0]
