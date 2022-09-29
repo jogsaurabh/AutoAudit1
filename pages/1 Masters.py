@@ -1,12 +1,16 @@
 #from logging import PlaceHolder
 from dataclasses import field
+from queue import Empty
 import streamlit as st
 import pandas as pd
 import numpy as np
 #from main import show_login_page,LoggedOut_Clicked
-from functions import update_verification_criteria,update_risk_weights,get_user_rights,get_active_users,add_datato_ds,get_verification,get_audit
+from st_aggrid import AgGrid,DataReturnMode, GridUpdateMode, GridOptionsBuilder, JsCode, grid_options_builder
+#from formatter import NullFormatter
+
+from functions import import_defalut_checklist,update_verification_criteria,update_risk_weights,get_user_rights,get_active_users,add_datato_ds,get_verification,get_audit
 from functions import get_risk_weights_ds_vouching,create_user,check_login,assign_user_rights,create_company,get_company_names,get_risk_weights_ds
-from functions import create_dataset,add_verification_criteria,get_dsname,get_entire_dataset,get_auditee_comp
+from functions import modify_audit_cheklist,add_audit_cheklist,del_checklist,get_audit_checklist,create_dataset,add_verification_criteria,get_dsname,get_entire_dataset,get_auditee_comp
 import sqlite3
 from PIL import Image
 image = Image.open('autoaudit_t.png')
@@ -31,7 +35,7 @@ def show_masters():
         with st.sidebar.markdown("# Masters "):
             master_options = st.radio(
             'Masters- Dataset',
-            ('Add New Data Set', 'Add Records to Data Set','Verification Check List','Set Risk Weights for Data Set','Compare with Audited Dataset'))            
+            ('Add New Data Set', 'Add Records to Data Set','Set Check List','Verification Check List','Set Risk Weights for Data Set','Compare with Audited Dataset'))            
         if master_options=='Add New Data Set':
             
             st.header("Add New Data Set")
@@ -46,7 +50,7 @@ def show_masters():
             #st.warning("Check ...First Column is Primary Key / Unique")
             auditee=get_auditee_comp()
             if auditee.empty:
-                st.error(f"No Auditee assigned to Current Company...\n Assign Atleast 1 user with Auditee Role")
+                st.info(f"No Auditee assigned to Current Company...\n Assign Atleast 1 user with Auditee Role")
                 
             else:
                 table_name=st.text_input("Enter Name of Data Set",key="tablename1")
@@ -56,16 +60,34 @@ def show_masters():
                 else:
                     uploaded_file = st.file_uploader("Upload a file",type='xlsx',key="uploadfile1")
                 if uploaded_file is not None:
-                        st.write(uploaded_file.name)
+                        #st.write(uploaded_file.name)
                         filename=uploaded_file.name
                         if ftype=='CSV':
                             dataframe = pd.read_csv(uploaded_file,encoding= 'unicode_escape')
+                            for y in dataframe.columns:
+                                #check if  column is Boolion type
+                                if(pd.api.types.is_bool_dtype(dataframe[y])):
+                                    #convert to string
+                                    dataframe[y] = dataframe[y].map({True: 'True', False: 'False'})
+                                    #st.write(y)
+                                    
                         else:                            
                             dataframe = pd.read_excel(uploaded_file)
+                            
+                            for y in dataframe.columns:
+                                #st.write(y)
+                                #check if  column is Boolion type
+                                if(pd.api.types.is_bool_dtype(dataframe[y])):
+                                    #convert to string
+                                    
+                                    dataframe[y] = dataframe[y].map({True: 'True', False: 'False'})
+                                    #st.write(y)
+                            
                         st.dataframe(dataframe)
+                        #st.table(dataframe.info())
                         #check if colum name=index or Index
                         if 'Index' in dataframe.columns or 'index' in dataframe.columns:
-                            st.error(f'Column name with "Index" or "index" not allowed...Please change colum Name')
+                            st.info(f'Column name with "Index" or "index" not allowed...Please change colum Name')
                         else:
                             if st.button("Create Data Set",key="b1"):
                                 if table_name:
@@ -73,7 +95,7 @@ def show_masters():
                                     st.success(message) 
                                     #masters.empty()       
                                 else:
-                                    st.error("Please enter Data Set Name")
+                                    st.info("Please enter Data Set Name")
                                     #masters.empty()
                         #del & clear DataFrame
                         del [[dataframe]]
@@ -86,7 +108,7 @@ def show_masters():
                 #get list of ds_name for current company
                 ds_names=get_dsname(int(st.session_state['AuditID']))
                 if ds_names.empty:
-                    st.error(f"No Data Sets for Current Company...\n First Add Data Set in current Company.")
+                    st.info(f"No Data Sets for Current Company...\n First Add Data Set in current Company.")
                 else:
                     col1, col2 =st.columns(2)
                     with col1:
@@ -170,7 +192,120 @@ def show_masters():
                         veri_df=get_verification(ds_name,int(st.session_state['AuditID']))
                         st.dataframe(veri_df)
                             
-                                                     
+        elif master_options=='Set Check List':
+            st.header("Set Check List")
+            auditid=int(st.session_state['AuditID'])
+            crud=st.radio("",('View','Add New','Modify','Delete'),horizontal=True,key='strcrudas')
+            df=get_audit_checklist(auditid)
+            builder = GridOptionsBuilder.from_dataframe(df)
+            builder.configure_pagination(enabled=True,paginationAutoPageSize=False,paginationPageSize=15)
+            builder.configure_selection(selection_mode="single",use_checkbox=True)
+                        #builder.configure_default_column(editable=True)
+            go = builder.build()
+                        #uses the gridOptions dictionary to configure AgGrid behavior.
+            grid_response=AgGrid(df, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+                        #selelcted row to show in audit AGGrid
+            selected = grid_response['selected_rows']
+                #st.data
+            if crud=='Add New':
+                st.success('Enter details to Add New Record')
+                auditee=get_auditee_comp()
+                if auditee.empty:
+                    st.info(f"No Auditee assigned to Current Company...\n Assign Atleast 1 user with Auditee Role")
+                else:
+                    
+                    add_options= st.radio("",('Import Default Check List', 'Add Check List'),horizontal=True,key='op1')
+                    if add_options=='Import Default Check List':
+                        #imp=st.button('View Default Check List',key='defchkli')
+                        person_responsible=st.selectbox("Select Defalut Person Responsible...You can Modify Later.",auditee,key="sbperson_responsibleck1i")
+                        impbt=st.button("Import",key='impchklist')
+                        if impbt:
+                                df=pd.read_excel('checklist.xlsx')
+                                
+                                df['Person_Responsible']=person_responsible
+                                df['Audit_id']=auditid
+                                res=import_defalut_checklist(df)
+                                st.success(res)
+                                
+                                
+                            
+                            
+                    else:
+                        #addc=st.button('Add Check List',key='defchkli')
+                        #if addc:
+                            with st.form("Add Checklist",clear_on_submit=True):
+                                criteria=st.text_area("Enter Criteria / Checklist",key='criteriac')
+                                Audit_area=st.text_input("Enter Audit Area",key='Aarea')
+                                heading=st.text_input("Enter Heading / Group",key='Heading')
+                                risk_weight=st.slider("Set Risk Weights",min_value=1,max_value=10,key='slider2rw')
+                                person_responsible=st.selectbox("Select Person Responsible",auditee,key="sbperson_responsibleck")
+            
+                                if risk_weight >=1 and risk_weight <=3:
+                                    risk_category='Low'
+                                elif risk_weight >=4 and risk_weight <=7:
+                                    risk_category='Medium'
+                                else:
+                                    risk_category='High'
+                                submitted_chk = st.form_submit_button("Submit")
+                                                               
+                                if submitted_chk:
+                                    
+                                    if criteria  and Audit_area :
+                                        addchk=add_audit_cheklist(criteria,Audit_area,heading,risk_weight,
+                                                                  risk_category,person_responsible,auditid)
+                                    else:
+                                        st.info("Criteria & Audit Area are Mandatory fields")
+                            
+
+            elif crud=='Modify':
+                auditee=get_auditee_comp()
+                if auditee.empty:
+                    st.info(f"No Auditee assigned to Current Company...\n Assign Atleast 1 user with Auditee Role")
+                else:
+                    if selected:
+                            st.success('Enter details to Modify Selected Record')
+                            with st.form("Mdify Checklist Doc",clear_on_submit=True):
+                                mcriteria=st.text_area("Update Criteria",key='mcriteria',value=selected[0]['Criteria'])
+                                mauditarea=st.text_input("Update Audit Area",key='mauditarea',value=selected[0]['Audit_Area'])
+                                mheading=st.text_input("Update Heading / Group",key='mheading',value=selected[0]['Heading'])
+                                mrisk_weight=st.slider("Update Risk Weights",min_value=1,max_value=10,key='slider2rwm')
+                                mperson_responsible=st.selectbox("Update Person Responsible",auditee,key="sbperson_responsibleckm")
+                
+                                if mrisk_weight >=1 and mrisk_weight <=3:
+                                        mrisk_levl='Low'
+                                elif mrisk_weight >=4 and mrisk_weight <=7:
+                                        mrisk_levl='Medium'
+                                else:
+                                        mrisk_levl='High'
+                                    
+                                roid=selected[0]['id']
+                                
+                                
+                                submitted_chk_mod =st.form_submit_button("Submit")
+                                if submitted_chk_mod:
+                                    if mcriteria  and mauditarea :
+                                        addchk=modify_audit_cheklist(roid,mcriteria,mrisk_weight,mrisk_levl,mauditarea,
+                                                                     mheading,mperson_responsible)
+                                    else:
+                                        st.info("Criteria & Audit Area are Mandatory fields")
+                            
+                    else:
+                            st.info('Select a Record to Modify ....')
+                        
+                    
+            elif crud=='View':
+                st.success('')
+            else:
+                if selected:
+                        st.success('Are you sure you want to Delete Selected Record')
+                        if st.button("Delete Selected Record",key='delcompdocack'):
+                            rid=selected[0]['id']
+                            rdel=del_checklist(rid)
+                else:
+                        st.info('Select a Record to Delete ....')
+
+                       
+                                                   
         elif master_options=='Set Risk Weights for Data Set':
             st.header("Update Risk Weights for each Field")
                 #st.dataframe(Chek_List,width=1000)
@@ -204,7 +339,7 @@ def show_masters():
                             updaterisk=update_risk_weights(criteria_selected,ds,int(st.session_state['AuditID']),risk_weight,risk_category)
                             #Chek_List=add_verification_criteria(Crtiteria,ds_name,comp_name,risk_weight,risk_category)
                         else:
-                            st.error('Criteria can not be blank.')
+                            st.info('Criteria can not be blank.')
             
             #st.write(field)
             with st.expander("View Risk Weights"):

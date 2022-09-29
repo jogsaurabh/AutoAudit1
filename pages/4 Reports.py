@@ -3,6 +3,7 @@
 from docx import Document
 from htmldocx import HtmlToDocx
 from PIL import Image
+import numpy as np
 #import streamlit.components.v1 as components
 import plotly.io as pio
 from jinja2 import Environment, FileSystemLoader
@@ -11,9 +12,9 @@ import pandas as pd  # pip install pandas openpyxl
 import plotly.express as px  # pip install plotly-express
 import streamlit as st  # pip install streamlit
 from st_aggrid import AgGrid,DataReturnMode, GridUpdateMode, GridOptionsBuilder, JsCode, grid_options_builder
-from functions import get_Summary_audit_values,get_ar_queries,get_vv_quries,get_values_id_dsn,get_audit_values,get_queries,get_ar,get_pending_queries,get_dataset_values
+from functions import get_pending_advere_obser,get_Summary_audit_values,get_ar_queries,get_vv_quries,get_values_id_dsn,get_audit_values,get_queries,get_ar,get_pending_queries,get_dataset_values
 from functions import get_Summary_audit_values_riskweight_comp,get_Summary_audit_values_riskcategory,get_user_rights,get_active_users,add_datato_ds,get_verification,get_audit
-from functions import get_Summary_audit_values_comp,get_Summary_audit_values_riskweight,create_user,check_login,assign_user_rights,create_company,get_company_names
+from functions import get_audit_observations,get_Summary_audit_values_comp,get_Summary_audit_values_riskweight,create_user,check_login,assign_user_rights,create_company,get_company_names
 from functions import create_dataset,add_verification_criteria,get_dsname,get_entire_dataset,get_auditee_comp
 st.set_page_config(page_title="Audit Dashboard", page_icon=":bar_chart:", layout="wide")
 #st.title(":bar_chart: Audit Dashboard")
@@ -28,235 +29,303 @@ def show_report():
         st.write(f"User:-{st.session_state['User']}",f"  | Company:-{st.session_state['Company']}",
                  f"  | Audit:-{st.session_state['Audit']}",f"  | Role:-{st.session_state['Role']}")
         # ---- SIDEBAR ----
-        
-        with st.sidebar.markdown("# Reports"):
-            optionsdf=get_dsname(int(st.session_state['AuditID']))
-            #add blank row at begining of list
-            optionsdf.loc[-1]=['---']
-            optionsdf.index=optionsdf.index+1
-            optionsdf.sort_index(inplace=True)
-            ds=st.selectbox("Select Data Set ",optionsdf,key="1selectdsname")
-            #ds_name=f"{st.session_state['Company']}_{(st.session_state['AuditID'])}_{d_sname}"
-            #select dataset 
-        if ds=="---":
-            st.success("Select Data Set ")
-        else:
-            st.title("Audit Reports")
-            tab1,tab2 =st.tabs(["Reports by Data Set ","   Summary Report for Audit  "])
-            with tab1:
-                #st.header(f"Audit Summary for {ds}")
-                #get queries for selected Dataset
-                
-                audit_id=int(st.session_state['AuditID'])
-                st.success(f"Audit Summary for {ds}")
-                #st.markdown("""---""")
-                #df=get_dataset(ds_name)
-                values=get_dataset_values(f"{comp_name}_{st.session_state['AuditID']}_{ds}")
-                totalrecords= values['total_records']
-                totalaudit=values['total_audited']
-                #st.info(totalrecords)
-                #st.info(totalaudit)
-                #dsvalues=get_audit_values(int(st.session_state['AuditID']))
-                auditvalues=get_values_id_dsn(int(st.session_state['AuditID']),ds)
-                #st.info(dsvalues)
-                #st.info(auditvalues)
-                total_queries=auditvalues['total_queries_vv'] + auditvalues['total_queries_ar']
-                totalrisk=auditvalues['auditrisk_total']*totalaudit
-                auditrisk=auditvalues['auditrisk_audited']
-                if totalrisk==0:
-                    riskpercent='0.00 %'
-                else:
-                    riskpercent='{percent:.2%}'.format(percent=auditrisk/totalrisk)
-                #show KPIs
-                col1,col2,col3= st.columns(3)
-                with col1:
-                    new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Total Transactions:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                        #st.markdown('<style>p{color:red;}</style>"Total Transactions:"',unsafe_allow_html=True)
-                    st.subheader(f"{totalrecords}")
-                    new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Total Risk Score:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                    st.subheader(f"{totalrisk}")
-                with col2:
-                    new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Transactions Audited:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                        #st.subheader("Transactions Audited:")
-                    st.subheader(f"{totalaudit}")
-                    new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Audited Risk Score:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                    st.subheader(f"{auditrisk}")
-                with col3:
-                    new_title = '<p style="font-family:sans-serif; color:Red; font-size: 20px;">Total Queries:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                        #st.subheader("Total Queries:")
-                    new_title = f'<p style="font-family:sans-serif;font-weight: bold; color:Red; font-size: 27px;">{total_queries}</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                    #st.subheader(f"{total_queries}")
-                    new_title = '<p style="font-family:sans-serif; color:Red; font-size: 20px;">Risk Percentage:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                    #st.subheader(f"{riskpercent}")
-                    new_title = f'<p style="font-family:sans-serif;font-weight: bold; color:Red; font-size: 27px;">{riskpercent}</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                #st.markdown("""---""")
-                #charts for V&V
-                
-                st.success(f"Queries Summary for {ds}")
-                #get DF for vouching & verification
-                auditdf_1=get_Summary_audit_values(int(st.session_state['AuditID']),ds)
-                dict={'Criteria':'Analytical Review & Other','Total Queries':auditvalues['total_queries_ar']}
-                auditdf_1=auditdf_1.append(dict,ignore_index=True)
-                col1, col2= st.columns(2)
-                with col1:
-                    st.bar_chart(auditdf_1,x='Criteria',y='Total Queries')
-                with col2:
-                    st.dataframe(auditdf_1)
-                    #st.bar_chart(auditdf,x='Criteria',y='Total Queries')
-                st.success(f"Risk Based Audit Summary for {ds}")
-                auditdf_r=get_Summary_audit_values_riskweight(int(st.session_state['AuditID']),ds)
-                col1, col2= st.columns(2)
-                with col1:
-                
-                    st.bar_chart(auditdf_r,x='Criteria',y='Total Risk Weight')
-                with col2:
-                    st.dataframe(auditdf_r)
-                #by Risk Category
-                #auditdf=get_Summary_audit_values_riskcategory(int(st.session_state['AuditID']),ds)
-                
-                #col1, col2= st.columns(2)
-                #with col1:
-                
-                    #st.bar_chart(auditdf,x=['Criteria','Risk_Category'],y='Total Risk Weight')
-                #with col2:
+        with st.sidebar.markdown("# Select..."):
+            sta_opts=st.comp_opps=st.radio('Reports',('Audit Observations','Reports by Data Set'),key='ropcompr')
+        audit_id=int(st.session_state['AuditID'])
+        if sta_opts=='Reports by Data Set':  
+            with st.sidebar.markdown("# Reports"):
+                optionsdf=get_dsname(int(st.session_state['AuditID']))
+                #add blank row at begining of list
+                optionsdf.loc[-1]=['---']
+                optionsdf.index=optionsdf.index+1
+                optionsdf.sort_index(inplace=True)
+                ds=st.selectbox("Select Data Set ",optionsdf,key="1selectdsname")
+                #ds_name=f"{st.session_state['Company']}_{(st.session_state['AuditID'])}_{d_sname}"
+                #select dataset 
+            if ds=="---":
+                st.success("Select Data Set ")
+            else:
+                st.title("Audit Reports")
+                tab1,tab2 =st.tabs(["Reports by Data Set ","   Summary Report for Audit  "])
+                with tab1:
+                    #st.header(f"Audit Summary for {ds}")
+                    #get queries for selected Dataset
                     
-                    #st.dataframe(auditdf)
-                st.markdown("""---""")
-                st.success(f"View / Download - Query List for {ds}...")
-                with st.expander("Voching & Verification Queries"):
+                    audit_id=int(st.session_state['AuditID'])
+                    st.success(f"Audit Summary for {ds}")
+                    #st.markdown("""---""")
+                    #df=get_dataset(ds_name)
+                    values=get_dataset_values(f"{comp_name}_{st.session_state['AuditID']}_{ds}")
+                    totalrecords= values['total_records']
+                    totalaudit=values['total_audited']
+                    #st.info(totalrecords)
+                    #st.info(totalaudit)
+                    #dsvalues=get_audit_values(int(st.session_state['AuditID']))
+                    auditvalues=get_values_id_dsn(int(st.session_state['AuditID']),ds)
+                    #st.info(dsvalues)
+                    #st.info(auditvalues)
+                    total_queries=auditvalues['total_queries_vv'] + auditvalues['total_queries_ar']
+                    totalrisk=auditvalues['auditrisk_total']*totalaudit
+                    auditrisk=auditvalues['auditrisk_audited']
+                    if totalrisk==0:
+                        riskpercent='0.00 %'
+                    else:
+                        riskpercent='{percent:.2%}'.format(percent=auditrisk/totalrisk)
+                    #show KPIs
+                    col1,col2,col3= st.columns(3)
+                    with col1:
+                        new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Total Transactions:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                            #st.markdown('<style>p{color:red;}</style>"Total Transactions:"',unsafe_allow_html=True)
+                        st.subheader(f"{totalrecords}")
+                        new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Total Risk Score:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                        st.subheader(f"{totalrisk}")
+                    with col2:
+                        new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Transactions Audited:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                            #st.subheader("Transactions Audited:")
+                        st.subheader(f"{totalaudit}")
+                        new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Audited Risk Score:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                        st.subheader(f"{auditrisk}")
+                    with col3:
+                        new_title = '<p style="font-family:sans-serif; color:Red; font-size: 20px;">Total Queries:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                            #st.subheader("Total Queries:")
+                        new_title = f'<p style="font-family:sans-serif;font-weight: bold; color:Red; font-size: 27px;">{total_queries}</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                        #st.subheader(f"{total_queries}")
+                        new_title = '<p style="font-family:sans-serif; color:Red; font-size: 20px;">Risk Percentage:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                        #st.subheader(f"{riskpercent}")
+                        new_title = f'<p style="font-family:sans-serif;font-weight: bold; color:Red; font-size: 27px;">{riskpercent}</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                    #st.markdown("""---""")
+                    #charts for V&V
+                    
+                    st.success(f"Queries Summary for {ds}")
+                    #get DF for vouching & verification
+                    auditdf_1=get_Summary_audit_values(int(st.session_state['AuditID']),ds)
+                    dict={'Criteria':'Analytical Review & Other','Total Queries':auditvalues['total_queries_ar']}
+                    auditdf_1=auditdf_1.append(dict,ignore_index=True)
+                    col1, col2= st.columns(2)
+                    with col1:
+                        st.bar_chart(auditdf_1,x='Criteria',y='Total Queries')
+                    with col2:
+                        st.dataframe(auditdf_1)
+                        #st.bar_chart(auditdf,x='Criteria',y='Total Queries')
+                    st.success(f"Risk Based Audit Summary for {ds}")
+                    auditdf_r=get_Summary_audit_values_riskweight(int(st.session_state['AuditID']),ds)
+                    col1, col2= st.columns(2)
+                    with col1:
+                    
+                        st.bar_chart(auditdf_r,x='Criteria',y='Total Risk Weight')
+                    with col2:
+                        st.dataframe(auditdf_r)
+                    #by Risk Category
+                    #auditdf=get_Summary_audit_values_riskcategory(int(st.session_state['AuditID']),ds)
+                    
+                    #col1, col2= st.columns(2)
+                    #with col1:
+                    
+                        #st.bar_chart(auditdf,x=['Criteria','Risk_Category'],y='Total Risk Weight')
+                    #with col2:
                         
-                        queries_df=get_vv_quries(f"{comp_name}_{st.session_state['AuditID']}_{ds}",ds,int(st.session_state['AuditID']))
-                        st.dataframe(queries_df.style.set_properties(**{'color':'red'},subset=['Criteria','Condition','Cause','Effect','Risk_Weight',
-                                                                                            'Risk_Category']))
-                        csv=queries_df.to_csv().encode('utf-8')
-                        st.download_button("Download csv file",csv,f"{ds}.csv")
-                #get AR queries lit
-                #st.success("Query List of Analytical Reviw & Other Remarks...")
-                with st.expander("Analytical Reviw & Other Remarks"):
-                    queries_df=get_ar_queries(ds)
-                    st.dataframe(queries_df.style.set_properties(**{'color':'red'},subset=['Criteria','Condition','Cause','Effect','Risk_Weight',
-                                                                                        'Risk_Category']))
-                    csv=queries_df.to_csv().encode('utf-8')
-                    st.download_button("Download csv file",csv,f"{ds}.csv")
-                
-
-            with tab2:
-                st.success(f"Audit Summary for {comp_name} -{st.session_state['Audit']}")
-                auditvalues=get_audit_values(int(st.session_state['AuditID']))
-                totalvvqueries=auditvalues['total_queries_vv']
-                totalarqueries=auditvalues['total_queries_ar']
-                col1,col2= st.columns(2)
-                with col1:
-                    new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Vouching & Verification Queries:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                        #st.markdown('<style>p{color:red;}</style>"Total Transactions:"',unsafe_allow_html=True)
-                    new_title = f'<p style="font-family:sans-serif; color:Red; font-size: 27px;">{totalvvqueries}</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
+                        #st.dataframe(auditdf)
+                    st.markdown("""---""")
+                    st.success(f"View / Download - Query List for {ds}...")
+                    with st.expander("Voching & Verification Queries"):
+                            st.success(f"""Use Options to Group Report by Mutiple Levels.
+                                            Right Click to Export Report to Excel""")
+                            queries_df=get_vv_quries(f"{comp_name}_{st.session_state['AuditID']}_{ds}",ds,int(st.session_state['AuditID']))
+                            #st.dataframe(queries_df.style.set_properties(**{'color':'red'},subset=['Criteria','Condition','Cause','Effect','Risk_Weight',
+                            builder = GridOptionsBuilder.from_dataframe(queries_df)
+                            builder.configure_pagination(enabled=True,paginationAutoPageSize=False,paginationPageSize=10)
+                            #builder.configure_selection(selection_mode="single",use_checkbox=True)
+                            builder.configure_columns(['Criteria','Condition','Cause','Effect','Reply'],cellStyle={'color': 'red'})
+                            builder.configure_default_column(groupable=True)
+                            go = builder.build()
+                                    #uses the gridOptions dictionary to configure AgGrid behavior.
+                            AgGrid(queries_df, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+                                                                                            #'Risk_Category'])
+                            #csv=queries_df.to_csv().encode('utf-8')
+                            #st.download_button("Download csv file",csv,f"{ds}.csv")
+                    #get AR queries lit
+                    #st.success("Query List of Analytical Reviw & Other Remarks...")
+                    with st.expander("Analytical Reviw & Other Remarks"):
+                        queries_ar=get_ar_queries(ds)
+                        #st.dataframe(queries_df.style.set_properties(**{'color':'red'},subset=['Criteria','Condition','Cause','Effect','Risk_Weight',
+                                                                                        # 'Risk_Category']))
+                        #csv=queries_df.to_csv().encode('utf-8')
+                        #st.download_button("Download csv file",csv,f"{ds}.csv")
+                        st.success(f"""Use Options to Group Report by Mutiple Levels.
+                                            Right Click to Export Report to Excel""")
+                        #queries_df=get_vv_quries(f"{comp_name}_{st.session_state['AuditID']}_{ds}",ds,int(st.session_state['AuditID']))
+                            #st.dataframe(queries_df.style.set_properties(**{'color':'red'},subset=['Criteria','Condition','Cause','Effect','Risk_Weight',
+                        builder = GridOptionsBuilder.from_dataframe(queries_ar)
+                        builder.configure_pagination(enabled=True,paginationAutoPageSize=False,paginationPageSize=10)
+                            #builder.configure_selection(selection_mode="single",use_checkbox=True)
+                        builder.configure_columns(['Criteria','Condition','Cause','Effect','Reply'],cellStyle={'color': 'red'})
+                        builder.configure_default_column(groupable=True)
+                        go = builder.build()
+                                    #uses the gridOptions dictionary to configure AgGrid behavior.
+                        AgGrid(queries_ar, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+                                            
                     
-                with col2:
-                    new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Analytical Review& Other Queries:</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                        #st.subheader("Transactions Audited:")
-                    new_title = f'<p style="font-family:sans-serif;color:Red; font-size: 27px;">{totalarqueries}</p>'
-                    st.markdown(new_title, unsafe_allow_html=True)
-                #charts for V&V
-                
-                st.success("Vouching & Verification - Queries Summary by Dataset")
-                #get DF for vouching & verification
-                auditdf=get_Summary_audit_values_comp(int(st.session_state['AuditID']))
-                col1, col2= st.columns(2)
-                with col1:
-                    st.bar_chart(auditdf,x='Data Set Name',y='Total Queries')
-                with col2:
-                    st.dataframe(auditdf)
-                    #st.bar_chart(auditdf,x='Criteria',y='Total Queries')
-                st.success("Vouching & Verification - Risk Based Audit Summary by Data Set")
-                auditdf=get_Summary_audit_values_riskweight_comp(int(st.session_state['AuditID']))
-                col1, col2= st.columns(2)
-                with col1:
-                
-                    st.bar_chart(auditdf,x='Data Set Name',y='Total Risk Weight')
-                with col2:
-                    st.dataframe(auditdf,)
-         #download word file report
-            if st.button("Generate Report in Word",key="grw"):
-                fname=f"{ds}{comp_name}{st.session_state['AuditID']}"
-                #st.write(fname)
-                # 2. Create a template Environment
-                env = Environment(loader=FileSystemLoader('templates'))
-                # 3. Load the template from the Environment
-                template = env.get_template('template.html')
-                # 4. Render the template with variables
-                chart1=px.bar(
-                        auditdf_1,
-                        x="Criteria",
-                        y="Total Queries",
-                        #orientation="h",
-                        title="<b>Total Queries by Criteria</b>",
-                        color_discrete_sequence=["#0083B8"] * len(auditdf),
-                        template="plotly_white",text_auto=True
-                    )
-                chart1.update_layout(
-                        plot_bgcolor="rgba(0,0,0,0)")
-                        #xaxis=(dict(showgrid=False)))
-                fchart1=f"{fname}c1.png"
-                pio.write_image(chart1,fchart1)
-                #st.plotly_chart(chart1,use_container_width=True)
-                
-                #second chart
-                chart2=px.bar(
-                        auditdf_r,
-                        x="Criteria",
-                        y="Total Risk Weight",
-                        #orientation="h",
-                        title="<b>Risked Based Audit Summary</b>",
-                        color_discrete_sequence=["#0083B8"] * len(auditdf),
-                        template="plotly_white",text_auto=True
-                    )
-                chart2.update_layout(
-                        plot_bgcolor="rgba(0,0,0,0)")
-                        #xaxis=(dict(showgrid=False)))
-                fchart2=f"{fname}c2.png"
-                pio.write_image(chart1,fchart2)
-                #st.plotly_chart(chart1,use_container_width=True)
-                
-                
-                titler=f"Company:- {comp_name}| Audit:- {st.session_state['Audit']} | Data Set:- {ds}"
-                html1 = template.render(logo='autoaudit_t.png',
-                                        page_title_text=titler,
-                                        title_text='Summary Observations',
-                                        Total_tansactions=totalrecords,
-                                        Transactions_Audited=totalaudit,
-                                        Total_Queries=total_queries,
-                                        TotalRiskScore=totalrisk,
-                                        AuditedRiskScore=auditrisk,
-                                        RiskPercentage=riskpercent,
-                                        DF1_heading=f"Query Summary for: {ds}",
-                                        dataurl1=fchart1,                                
-                                        df1=auditdf_1.to_html(),
-                                        DF2_heading=f"Risk Based Audit Summary for: {ds}",
-                                        df2=auditdf_r.to_html(),
-                                        dataurl2=fchart2)
-                                        
-                #docx to rport
-                document = Document()
-                new_parser = HtmlToDocx()
-                document=new_parser.parse_html_string(html1)
-                document.save(fname)
-                #st.markdown(html1, unsafe_allow_html=True)
-                #components.html(html1, width=800, height=400,scrolling=True)
-                with open(fname,'rb') as f:
-                    st.download_button('Download Reports',f,'report.docx')
 
-             
+                with tab2:
+                    st.success(f"Audit Summary for {comp_name} -{st.session_state['Audit']}")
+                    auditvalues=get_audit_values(int(st.session_state['AuditID']))
+                    totalvvqueries=auditvalues['total_queries_vv']
+                    totalarqueries=auditvalues['total_queries_ar']
+                    col1,col2= st.columns(2)
+                    with col1:
+                        new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Vouching & Verification Queries:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                            #st.markdown('<style>p{color:red;}</style>"Total Transactions:"',unsafe_allow_html=True)
+                        new_title = f'<p style="font-family:sans-serif; color:Red; font-size: 27px;">{totalvvqueries}</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                        
+                    with col2:
+                        new_title = '<p style="font-family:sans-serif; color:Navy; font-size: 20px;">Analytical Review& Other Queries:</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                            #st.subheader("Transactions Audited:")
+                        new_title = f'<p style="font-family:sans-serif;color:Red; font-size: 27px;">{totalarqueries}</p>'
+                        st.markdown(new_title, unsafe_allow_html=True)
+                    #charts for V&V
+                    
+                    st.success("Vouching & Verification - Queries Summary by Dataset")
+                    #get DF for vouching & verification
+                    auditdf=get_Summary_audit_values_comp(int(st.session_state['AuditID']))
+                    col1, col2= st.columns(2)
+                    with col1:
+                        st.bar_chart(auditdf,x='Data Set Name',y='Total Queries')
+                    with col2:
+                        st.dataframe(auditdf)
+                        #st.bar_chart(auditdf,x='Criteria',y='Total Queries')
+                    st.success("Vouching & Verification - Risk Based Audit Summary by Data Set")
+                    auditdf=get_Summary_audit_values_riskweight_comp(int(st.session_state['AuditID']))
+                    col1, col2= st.columns(2)
+                    with col1:
+                    
+                        st.bar_chart(auditdf,x='Data Set Name',y='Total Risk Weight')
+                    with col2:
+                        st.dataframe(auditdf,)
+                #download word file report
+                if st.button("Generate Report in Word",key="grw"):
+                    fname=f"{ds}{comp_name}{st.session_state['AuditID']}"
+                    #st.write(fname)
+                    # 2. Create a template Environment
+                    env = Environment(loader=FileSystemLoader('templates'))
+                    # 3. Load the template from the Environment
+                    template = env.get_template('template.html')
+                    # 4. Render the template with variables
+                    chart1=px.bar(
+                            auditdf_1,
+                            x="Criteria",
+                            y="Total Queries",
+                            #orientation="h",
+                            title="<b>Total Queries by Criteria</b>",
+                            color_discrete_sequence=["#0083B8"] * len(auditdf),
+                            template="plotly_white",text_auto=True
+                        )
+                    chart1.update_layout(
+                            plot_bgcolor="rgba(0,0,0,0)")
+                            #xaxis=(dict(showgrid=False)))
+                    fchart1=f"{fname}c1.png"
+                    pio.write_image(chart1,fchart1)
+                    #st.plotly_chart(chart1,use_container_width=True)
+                    
+                    #second chart
+                    chart2=px.bar(
+                            auditdf_r,
+                            x="Criteria",
+                            y="Total Risk Weight",
+                            #orientation="h",
+                            title="<b>Risked Based Audit Summary</b>",
+                            color_discrete_sequence=["#0083B8"] * len(auditdf),
+                            template="plotly_white",text_auto=True
+                        )
+                    chart2.update_layout(
+                            plot_bgcolor="rgba(0,0,0,0)")
+                            #xaxis=(dict(showgrid=False)))
+                    fchart2=f"{fname}c2.png"
+                    pio.write_image(chart1,fchart2)
+                    #st.plotly_chart(chart1,use_container_width=True)
+                    
+                    
+                    titler=f"Company:- {comp_name}| Audit:- {st.session_state['Audit']} | Data Set:- {ds}"
+                    html1 = template.render(logo='autoaudit_t.png',
+                                            page_title_text=titler,
+                                            title_text='Summary Observations',
+                                            Total_tansactions=totalrecords,
+                                            Transactions_Audited=totalaudit,
+                                            Total_Queries=total_queries,
+                                            TotalRiskScore=totalrisk,
+                                            AuditedRiskScore=auditrisk,
+                                            RiskPercentage=riskpercent,
+                                            DF1_heading=f"Query Summary for: {ds}",
+                                            dataurl1=fchart1,                                
+                                            df1=auditdf_1.to_html(),
+                                            DF2_heading=f"Risk Based Audit Summary for: {ds}",
+                                            df2=auditdf_r.to_html(),
+                                            dataurl2=fchart2)
+                                            
+                    #docx to rport
+                    document = Document()
+                    new_parser = HtmlToDocx()
+                    document=new_parser.parse_html_string(html1)
+                    document.save(fname)
+                    #st.markdown(html1, unsafe_allow_html=True)
+                    #components.html(html1, width=800, height=400,scrolling=True)
+                    with open(fname,'rb') as f:
+                        st.download_button('Download Reports',f,'report.docx')
+        else:
+            st.success("Audit Observations")
+            st.header("Risk Based Audit Summary")
+            df_allObservations=get_pending_advere_obser(audit_id)
+            #st.dataframe(df_allObservations)
+            #df_summ=pd.pivot_table(df_allObservations, values='Risk_Weight', index=['Audit_Area', 'Heading'],
+                        #aggfunc=np.sum)
+            df_summ=df_allObservations.groupby('Audit_Area',as_index=False)['Risk_Weight'].sum()
+            col1, col2= st.columns(2)
+            selected_area = st.selectbox("Choose Audit Area for Details", df_summ.Audit_Area, 0)
+            with col1:
+                        st.bar_chart(df_summ,x='Audit_Area',y='Risk_Weight')
+                        
+                        
+                        #st.dataframe(df_head.filter(lambda x: x['Audit_Area']==selected_area)['Risk_Weight'].sum())
+            with col2:
+                        
+                        st.dataframe(df_summ)
+                        
+            c1,c2 =st.columns(2)
+            with c1:
+                        st.write(selected_area)
+                        df_head=df_allObservations.loc[df_allObservations['Audit_Area'] == selected_area]
+                        
+                        df_head=df_head.groupby('Heading',as_index=False)['Risk_Weight'].sum()
+                        st.bar_chart(df_head,x='Heading',y='Risk_Weight')
+            with c2:
+                st.dataframe(df_head)
+                        
+            with st.expander("View All Audit Observations"):
+                
+                st.success(f"""Use Options to Group Report by Mutiple Levels.
+                                                Right Click to Export Report to Excel""")
+                #queries_df=get_vv_quries(f"{comp_name}_{st.session_state['AuditID']}_{ds}",ds,int(st.session_state['AuditID']))
+                                #st.dataframe(queries_df.style.set_properties(**{'color':'red'},subset=['Criteria','Condition','Cause','Effect','Risk_Weight',
+                builder = GridOptionsBuilder.from_dataframe(df_allObservations)
+                builder.configure_pagination(enabled=True,paginationAutoPageSize=False,paginationPageSize=10)
+                                #builder.configure_selection(selection_mode="single",use_checkbox=True)
+                builder.configure_columns(['Criteria','Condition','Cause','Effect','Reply'],cellStyle={'color': 'red'})
+                builder.configure_default_column(groupable=True)
+                go = builder.build()
+                                        #uses the gridOptions dictionary to configure AgGrid behavior.
+                AgGrid(df_allObservations, gridOptions=go,update_mode= (GridUpdateMode.SELECTION_CHANGED|GridUpdateMode.MODEL_CHANGED))
+                                                    
+                
 
 headerSection = st.container()
 mainSection = st.container()
@@ -298,7 +367,7 @@ def LoggedIn_Clicked(userName, password):
         loginuser=userName
     else:
         st.session_state['loggedIn'] = False
-        st.error("Invalid user name or password")
+        st.info("Invalid user name or password")
 
 def Register_Clicked(userid, password,designation,displayname):
     createuser=create_user(displayname,userid,password,designation)
