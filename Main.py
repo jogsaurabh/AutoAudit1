@@ -11,7 +11,7 @@ st.set_page_config(page_title="AutoAudit", page_icon=":white_check_mark:", layou
 st.image(image,width=250)
 st.markdown("""---""")
 #get list of companies
-company_list=get_company_names()
+
 #st.write(company_list.__str__())
 headerSection = st.container()
 mainSection = st.container()
@@ -43,22 +43,25 @@ def assign_user_rights_show():
     st.title("Assign User")
     
 def show_main_page():
+    company_list=get_company_names()
     with mainSection:
         #st.success(f"{st.session_state['Company']}_{st.session_state['AuditID']}_filename")
         st.write(f"User:-{st.session_state['User']}",f"  | Company:-{st.session_state['Company']}",
                  f"  | Audit:-{st.session_state['Audit']}",f"  | Role:-{st.session_state['Role']}")
         
         with st.sidebar.markdown("# Masters "):
-            master_options = st.radio("Select",('Assign User Rights','Create Company','Add New Audit'))
+            master_options = st.radio("Select",('Create Company','Assign User Rights','Add New Audit'))
         #st.sidebar.button("Assign User Rights",key="ba1",on_click=assign_user_rights_show)
         if master_options=="Create Company":
-            with st.form("Creat New Company",clear_on_submit=True):
-                        st.title("Creat New Company")
+            #st.success("""For First Time Login- """)
+            with st.form("Create New Company",clear_on_submit=True):
+                        st.title("Create New Company")
                         comp_name = st.text_input (label="",value="",placeholder="Enter company Name",key="comp_name1")
                         com_address = st.text_input (label="", value="",placeholder="Enter company Address",key="com_address1")
                         com_email = st.text_input (label="", value="", placeholder="Enter email",key="com_email1")
                         com_mobile = st.number_input("Mobile No",min_value=1111111111,max_value=9999999999,key="com_mobile1")
                         com_person = st.text_input (label="", value="", placeholder="Enter Contact Person",key="com_person1")
+                        
                         #st.write(comp_name)
                         #st.button("Submit",on_click=create_company, args= (comp_name, com_address,com_email,com_mobile,com_person))
                         #st.button("Submit",key="sub11"):
@@ -74,24 +77,33 @@ def show_main_page():
                 st.dataframe(userrights_df)
             
             users=get_active_users()
-            with st.form("Assign User Rights",clear_on_submit=True):
-                
-                st.title("Assign User Rights")
-                company_name=st.selectbox("Select Company",company_list,key="company_name")
-                        #users=get_unassigned_users(comapname)
-                user=st.selectbox("Select User",users,key="usersb")
-                role=st.selectbox("Select User",("Manager","Auditor","Auditee"),key="usersb1")
-            
-            
-                submitb = st.form_submit_button("Submit")
-                if submitb:
-                    assign_user_rights(user,company_name,role)
-                    #st.write("OK")
-                        #assign_user_rights(user,company_name,role)
+            if company_list.empty:
+                    st.info('You can assign rights for Company created by you.')
+                    
+            else:
+                    with st.form("Assign User Rights",clear_on_submit=True):
+                        
+                        st.title("Assign User Rights")
+                        
+                        company_name=st.selectbox("Select Company",company_list,key="company_name")
+                                #users=get_unassigned_users(comapname)
+                        user=st.selectbox("Select User",users,key="usersb")
+                        role=st.selectbox("Select Role",("Manager","Auditor","Auditee"),key="usersb1")
+                    
+                    
+                        submitb = st.form_submit_button("Submit")
+                        if submitb:
+                            assign_user_rights(user,company_name,role)
+                            #st.write("OK")
+                                #assign_user_rights(user,company_name,role)
         else:
-            companies=get_comp_by_user()
+            if st.session_state['User']=='admin':
+                companies=get_company_names()
+            else:
+                
+                companies=get_comp_by_user()
             if companies.empty:
-                st.error(f"Only Users with Manager Role can add Audit...\n You are not Manager for any Company.")
+                st.info(f"Only Users with Manager Role can add Audit...\n You are not Manager for any Company.")
             else:
                 with st.form("Add New Audit",clear_on_submit=True):
                         st.title("Add New Audit")
@@ -104,10 +116,13 @@ def show_main_page():
                         
                         #st.button("Submit",on_click=create_company, args= (comp_name, com_address,com_email,com_mobile,com_person))
                         #st.button("Submit",key="sub11"):
+                        
                         if st.form_submit_button("Submit"):
-                            creat_audit(Audit_Name,Company_name,Period,Remarks)
-            
- 
+                            if Audit_Name:
+                                    creat_audit(Audit_Name,Company_name,Period,Remarks)
+                            else:
+                                st.success("Audit Name is Required")
+    
 def LoggedOut_Clicked():
     st.session_state['loggedIn'] = False
     loginuser=""
@@ -125,7 +140,7 @@ def LoggedIn_Clicked(userName, password):
         loginuser=userName
     else:
         st.session_state['loggedIn'] = False
-        st.error("Invalid user name or password")
+        st.info("Invalid user name or password")
 
 def Register_Clicked(userid, password,designation,displayname):
     createuser=create_user(displayname,userid,password,designation)
